@@ -1,22 +1,16 @@
 import { Link } from 'react-router-dom'
+import { PageHero } from '../components/PageHero'
 import { site, whoWeServe } from '../content/site'
 
 export function About() {
   return (
     <>
-      <section className="bg-navy px-5 py-20 text-ivory md:px-8 lg:px-12">
-        <div className="container-site">
-          <p className="section-label text-gold-light">About</p>
-          <h1 className="mt-4 max-w-4xl font-display text-5xl font-semibold md:text-6xl">
-            Built for Local Creators. Designed for Big Ideas.
-          </h1>
-          <p className="mt-6 max-w-2xl text-lg text-ivory/75">
-            Sodus Street Studio gives artists, podcasters, storytellers, and
-            entrepreneurs a professional creative space rooted in the heart of
-            Clyde, NY.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        label="About"
+        title="Built for Local Creators. Designed for Big Ideas."
+        description="Sodus Street Studio gives artists, podcasters, storytellers, and entrepreneurs a professional creative space rooted in the heart of Clyde, NY."
+        image="/images/page-hero-about.png"
+      />
 
       <section className="section-pad">
         <div className="container-site max-w-3xl">

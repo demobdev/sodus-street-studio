@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { PageHero } from '../components/PageHero'
 import { equipmentList } from '../content/services'
 import { site } from '../content/site'
 
@@ -14,22 +15,15 @@ const galleryItems = [
 export function StudioSpace() {
   return (
     <>
-      <section className="bg-navy px-5 py-20 text-ivory md:px-8 lg:px-12">
-        <div className="container-site">
-          <p className="section-label text-gold-light">Studio Space</p>
-          <h1 className="mt-4 max-w-4xl font-display text-5xl font-semibold md:text-6xl">
-            A Creative Space Built for Focus, Comfort, and Quality
-          </h1>
-          <p className="mt-6 max-w-2xl text-lg text-ivory/75">
-            Sodus Street Studio offers a warm, professional environment where
-            creators can record, collaborate, and bring projects to life.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-4">
-            <Link to="/booking" className="btn-primary">Check Availability</Link>
-            <Link to="/booking" className="btn-secondary">Book a Session</Link>
-          </div>
-        </div>
-      </section>
+      <PageHero
+        label="Studio Space"
+        title="A Creative Space Built for Focus, Comfort, and Quality"
+        description="Sodus Street Studio offers a warm, professional environment where creators can record, collaborate, and bring projects to life."
+        image="/images/page-hero-studio.png"
+      >
+        <Link to="/booking" className="btn-primary">Check Availability</Link>
+        <Link to="/booking" className="btn-secondary">Book a Session</Link>
+      </PageHero>
 
       <section className="section-pad">
         <div className="container-site">

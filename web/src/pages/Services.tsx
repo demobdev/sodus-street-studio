@@ -1,23 +1,17 @@
 import { Link } from 'react-router-dom'
+import { PageHero } from '../components/PageHero'
 import { addOns, services } from '../content/services'
 import { site } from '../content/site'
 
 export function Services() {
   return (
     <>
-      <section className="bg-navy px-5 py-20 text-ivory md:px-8 lg:px-12">
-        <div className="container-site">
-          <p className="section-label text-gold-light">Services</p>
-          <h1 className="mt-4 max-w-4xl font-display text-5xl font-semibold md:text-6xl">
-            Recording, Production, and Creative Support in Clyde, NY
-          </h1>
-          <p className="mt-6 max-w-2xl text-lg text-ivory/75">
-            From podcasts and voiceovers to music, content production, and studio
-            rental, Sodus Street Studio gives creators the space, tools, and
-            guidance to bring ideas to life.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        label="Services"
+        title="Recording, Production, and Creative Support in Clyde, NY"
+        description="From podcasts and voiceovers to music, content production, and studio rental, Sodus Street Studio gives creators the space, tools, and guidance to bring ideas to life."
+        image="/images/page-hero-services.png"
+      />
 
       <section className="section-pad">
         <div className="container-site grid gap-8">

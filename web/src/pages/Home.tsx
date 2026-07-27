@@ -32,17 +32,18 @@ export function Home() {
     <>
       {/* Hero */}
       <section className="relative min-h-[88vh] overflow-hidden bg-navy text-ivory">
+        <img
+          src="/images/hero-studio.png"
+          alt=""
+          aria-hidden
+          className="absolute inset-0 h-full w-full scale-105 object-cover object-[70%_45%] animate-fade-in"
+        />
         <div
-          className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_20%,rgba(184,149,74,0.22),transparent_45%),radial-gradient(ellipse_at_80%_70%,rgba(21,34,56,0.9),#0B1628)]"
+          className="absolute inset-0 bg-gradient-to-r from-navy/92 via-navy/72 to-navy/35"
           aria-hidden
         />
         <div
-          className="absolute inset-0 opacity-30"
-          style={{
-            backgroundImage:
-              'linear-gradient(rgba(248,245,239,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(248,245,239,0.04) 1px, transparent 1px)',
-            backgroundSize: '48px 48px',
-          }}
+          className="absolute inset-0 bg-gradient-to-t from-navy/80 via-transparent to-navy/40"
           aria-hidden
         />
         <div className="relative container-site flex min-h-[88vh] flex-col justify-center px-5 py-24 md:px-8 lg:px-12">
@@ -52,7 +53,7 @@ export function Home() {
           <h1 className="animate-fade-up-delay mt-4 max-w-4xl font-display text-5xl font-semibold leading-[1.05] tracking-tight text-ivory md:text-7xl">
             {site.tagline}
           </h1>
-          <p className="animate-fade-up-delay-2 mt-6 max-w-2xl text-lg leading-relaxed text-ivory/80 md:text-xl">
+          <p className="animate-fade-up-delay-2 mt-6 max-w-2xl text-lg leading-relaxed text-ivory/85 md:text-xl">
             {site.subheadline}
           </p>
           <div className="animate-fade-up-delay-2 mt-10 flex flex-wrap gap-4">

@@ -1,22 +1,17 @@
 import { Link } from 'react-router-dom'
 import { ContactForm } from '../components/ContactForm'
+import { PageHero } from '../components/PageHero'
 import { site } from '../content/site'
 
 export function Contact() {
   return (
     <>
-      <section className="bg-navy px-5 py-20 text-ivory md:px-8 lg:px-12">
-        <div className="container-site">
-          <p className="section-label text-gold-light">Contact</p>
-          <h1 className="mt-4 max-w-4xl font-display text-5xl font-semibold md:text-6xl">
-            Contact Sodus Street Studio
-          </h1>
-          <p className="mt-6 max-w-2xl text-lg text-ivory/75">
-            Have a question before booking? Reach out and we’ll help you choose
-            the right session for your project.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        label="Contact"
+        title="Contact Sodus Street Studio"
+        description="Have a question before booking? Reach out and we’ll help you choose the right session for your project."
+        image="/images/page-hero-contact.png"
+      />
 
       <section className="section-pad">
         <div className="container-site grid gap-12 lg:grid-cols-2">

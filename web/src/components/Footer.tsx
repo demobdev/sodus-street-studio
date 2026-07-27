@@ -8,9 +8,9 @@ export function Footer() {
       <div className="container-site section-pad grid gap-10 md:grid-cols-2 lg:grid-cols-5">
         <div>
           <img
-            src="/logo.png"
+            src="/logo-light.png"
             alt="Sodus Street Studio"
-            className="mb-4 h-12 w-auto max-w-[200px] object-contain brightness-110 sm:h-14 sm:max-w-[220px]"
+            className="mb-4 h-12 w-auto max-w-[200px] object-contain sm:h-14 sm:max-w-[220px]"
           />
           <p className="font-display text-2xl text-gold-light">{site.tagline}</p>
           <p className="mt-3 text-sm text-ivory/70">

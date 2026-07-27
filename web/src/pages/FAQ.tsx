@@ -1,22 +1,17 @@
 import { Link } from 'react-router-dom'
 import { Accordion } from '../components/Accordion'
+import { PageHero } from '../components/PageHero'
 import { faqCategories } from '../content/faq'
 
 export function FAQ() {
   return (
     <>
-      <section className="bg-navy px-5 py-20 text-ivory md:px-8 lg:px-12">
-        <div className="container-site">
-          <p className="section-label text-gold-light">FAQ</p>
-          <h1 className="mt-4 max-w-4xl font-display text-5xl font-semibold md:text-6xl">
-            Questions Before You Book?
-          </h1>
-          <p className="mt-6 max-w-2xl text-lg text-ivory/75">
-            Answers for first-time creators, returning clients, and anyone
-            deciding which session is right for their project.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        label="FAQ"
+        title="Questions Before You Book?"
+        description="Answers for first-time creators, returning clients, and anyone deciding which session is right for their project."
+        image="/images/page-hero-faq.png"
+      />
 
       <section className="section-pad">
         <div className="container-site space-y-14">

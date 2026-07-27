@@ -1,32 +1,57 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BookingForm } from '../components/BookingForm'
-import { sessionTypes, site } from '../content/site'
+import { PageHero } from '../components/PageHero'
+import { SessionTypeModal } from '../components/SessionTypeModal'
+import { sessions, type SessionType } from '../content/sessions'
+import { site } from '../content/site'
 
 export function Booking() {
+  const [activeSession, setActiveSession] = useState<SessionType | null>(null)
+  const [selectedSession, setSelectedSession] = useState('')
+
+  function handleBook(sessionTitle: string) {
+    setSelectedSession(sessionTitle)
+    setActiveSession(null)
+    document.getElementById('booking-form')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  }
+
   return (
     <>
-      <section className="bg-navy px-5 py-20 text-ivory md:px-8 lg:px-12">
-        <div className="container-site">
-          <p className="section-label text-gold-light">Booking</p>
-          <h1 className="mt-4 max-w-4xl font-display text-5xl font-semibold md:text-6xl">
-            Book Your Session at Sodus Street Studio
-          </h1>
-          <p className="mt-6 max-w-2xl text-lg text-ivory/75">
-            Choose your session type, reserve your time, and bring your next
-            creative project to life.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        label="Booking"
+        title="Book Your Session at Sodus Street Studio"
+        description="Choose your session type, reserve your time, and bring your next creative project to life."
+        image="/images/page-hero-booking.png"
+      />
 
       <section className="section-pad">
         <div className="container-site">
           <p className="section-label">Session Types</p>
           <h2 className="display-title mt-3">What Are You Creating?</h2>
+          <p className="mt-4 max-w-2xl text-navy-muted">
+            Select a session to see rates, duration options, and what to expect—then
+            jump straight into the booking form.
+          </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {sessionTypes.map((type) => (
-              <div key={type} className="border border-navy/10 bg-white px-5 py-4">
-                {type}
-              </div>
+            {sessions.map((session) => (
+              <button
+                key={session.id}
+                type="button"
+                onClick={() => setActiveSession(session)}
+                className="border border-navy/10 bg-white px-5 py-5 text-left transition duration-300 hover:border-gold hover:shadow-soft focus:outline-none focus:ring-2 focus:ring-gold/40"
+              >
+                <span className="block font-medium text-navy">{session.title}</span>
+                <span className="mt-2 block text-sm text-navy-muted">
+                  {session.summary}
+                </span>
+                <span className="mt-3 inline-block text-xs font-semibold uppercase tracking-[0.14em] text-gold-dark">
+                  View details →
+                </span>
+              </button>
             ))}
           </div>
         </div>
@@ -56,12 +81,17 @@ export function Booking() {
         </div>
       </section>
 
-      <section className="section-pad">
+      <section id="booking-form" className="section-pad scroll-mt-28">
         <div className="container-site max-w-3xl">
           <p className="section-label">Request a Session</p>
           <h2 className="display-title mt-3">Tell Us About Your Project</h2>
+          {selectedSession ? (
+            <p className="mt-3 text-sm text-gold-dark">
+              Selected session: <span className="font-semibold">{selectedSession}</span>
+            </p>
+          ) : null}
           <div className="mt-8">
-            <BookingForm />
+            <BookingForm selectedSession={selectedSession} />
           </div>
         </div>
       </section>
@@ -97,6 +127,12 @@ export function Booking() {
           </div>
         </div>
       </section>
+
+      <SessionTypeModal
+        session={activeSession}
+        onClose={() => setActiveSession(null)}
+        onBook={handleBook}
+      />
     </>
   )
 }

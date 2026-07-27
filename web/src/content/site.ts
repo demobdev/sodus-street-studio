@@ -35,16 +35,6 @@ export const site = {
   ],
 }
 
-export const sessionTypes = [
-  'Podcast Recording',
-  'Voiceover Recording',
-  'Music Recording',
-  'Audio Production / Editing',
-  'Studio Rental',
-  'Creative Consulting',
-  'Full-Day Booking',
-] as const
-
 export const whoWeServe = [
   'Podcasters',
   'Musicians',

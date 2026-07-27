@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { PageHero } from '../components/PageHero'
 
 const sampleTypes = [
   'Podcast clips',
@@ -12,18 +13,12 @@ const sampleTypes = [
 export function Portfolio() {
   return (
     <>
-      <section className="bg-navy px-5 py-20 text-ivory md:px-8 lg:px-12">
-        <div className="container-site">
-          <p className="section-label text-gold-light">Portfolio / Samples</p>
-          <h1 className="mt-4 max-w-4xl font-display text-5xl font-semibold md:text-6xl">
-            Hear What’s Possible at Sodus Street Studio
-          </h1>
-          <p className="mt-6 max-w-2xl text-lg text-ivory/75">
-            Explore samples from artists, podcasters, voiceover projects, and
-            creative sessions recorded or produced at Sodus Street Studio.
-          </p>
-        </div>
-      </section>
+      <PageHero
+        label="Portfolio / Samples"
+        title="Hear What’s Possible at Sodus Street Studio"
+        description="Explore samples from artists, podcasters, voiceover projects, and creative sessions recorded or produced at Sodus Street Studio."
+        image="/images/page-hero-portfolio.png"
+      />
 
       <section className="section-pad">
         <div className="container-site">

@@ -48,7 +48,7 @@ export function IglooBookingFlow({ catalog, onRefresh }: Props) {
       window.location.assign(checkoutUrl)
     } catch (cause) {
       setError(errorMessage(cause))
-      if (cause instanceof IglooApiError && cause.status === 409 && ['SOLD_OUT', 'UNAVAILABLE'].includes(cause.code || '')) {
+      if (cause instanceof IglooApiError && cause.status === 409 && ['SOLD_OUT', 'UNAVAILABLE', 'HOLD_EXPIRED'].includes(cause.code || '')) {
         setSlotId('')
         request.current = null
         await onRefresh().catch(() => undefined)
@@ -85,7 +85,7 @@ export function IglooBookingFlow({ catalog, onRefresh }: Props) {
                         <span className="block font-display text-2xl font-semibold">{item.name}</span>
                         <span className="mt-2 block text-sm leading-relaxed text-navy-muted">{item.description}</span>
                         <span className="mt-3 block text-sm">{item.durationMinutes} minutes · Up to {item.maxGuests} guests</span>
-                        <span className="mt-3 block font-semibold">{money(item.amountCents)} per igloo{catalog.mode === 'test' ? ' · Test price' : ''}</span>
+                        <span className="mt-3 block font-semibold">{money(item.amountCents)} per igloo, plus applicable tax{catalog.mode === 'test' ? ' · Test price' : ''}</span>
                       </span>
                     </span>
                   </label>
@@ -146,7 +146,7 @@ export function IglooBookingFlow({ catalog, onRefresh }: Props) {
                 <p className="mt-5 font-semibold">{selectedPackage.name}</p>
                 <p className="mt-2 text-sm text-ivory/75">One igloo · {selectedPackage.durationMinutes} minutes</p>
                 {selectedSlot ? <p className="mt-5 text-sm leading-relaxed text-ivory/85">{eventDate(selectedSlot.startsAt)}<br />{eventTime(selectedSlot.startsAt)} – {eventTime(selectedSlot.endsAt)}</p> : <p className="mt-5 text-sm text-ivory/75">Choose an available time to continue.</p>}
-                <div className="mt-6 border-t border-ivory/20 pt-5"><span className="block text-sm text-ivory/75">{catalog.mode === 'test' ? 'Test package price' : 'Package price'}</span><span className="mt-2 block font-display text-4xl text-gold-light">{money(selectedPackage.amountCents)}</span></div>
+                <div className="mt-6 border-t border-ivory/20 pt-5"><span className="block text-sm text-ivory/75">{catalog.mode === 'test' ? 'Test package price' : 'Package price'}</span><span className="mt-2 block font-display text-4xl text-gold-light">{money(selectedPackage.amountCents)}</span><p className="mt-2 text-sm text-ivory/75">Plus applicable tax. Final tax and total are shown in secure checkout.</p></div>
               </>
             ) : <p className="mt-5 text-sm leading-relaxed text-ivory/75">Choose a package and time to see your booking summary here.</p>}
           </aside>

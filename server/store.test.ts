@@ -30,6 +30,73 @@ function evidence(booking: Booking, fields: Partial<PaymentEvidence> = {}): Paym
 }
 const hasCode = (code: string) => (error: unknown) => error instanceof StoreError && error.code === code;
 
+test('only old never-attempted holds expire; recent requests, unknown outcomes and attached sessions keep inventory', async () => {
+  const f = await fixture(5);
+  const recent = await store.createHold(f.input(), { livemode: false });
+  const abandoned = await store.createHold(f.input(), { livemode: false });
+  const unknown = await store.createHold(f.input(), { livemode: false });
+  const attempted = await store.createHold(f.input(), { livemode: false });
+  const attached = await attach(await store.createHold(f.input(), { livemode: false }));
+  await store.prepareCheckout(unknown.id, { mode: 'payment' });
+  await db.query("UPDATE igloo_bookings SET checkout_attempted_at=now() WHERE id=$1", [attempted.id]);
+  await db.query("UPDATE igloo_bookings SET created_at=now()-interval '1 day' WHERE id<>$1", [recent.id]);
+  assert.equal(await store.expireUnattemptedHolds(), 1);
+  assert.equal(await store.expireUnattemptedHolds(), 0);
+  assert.equal((await store.getBooking(abandoned.id))?.status, 'expired');
+  for (const b of [recent, unknown, attempted, attached]) assert.equal((await store.getBooking(b.id))?.status, 'held');
+  assert.equal((await store.listSlots())[0]!.remaining, 1);
+  await assert.rejects(store.prepareCheckout(abandoned.id, { mode: 'payment' }), hasCode('HOLD_EXPIRED'));
+  await store.createHold(f.input(), { livemode: false });
+  assert.equal((await store.listSlots())[0]!.remaining, 0);
+});
+
+test('expiry racing Checkout preparation cannot release inventory after the request becomes durable', async () => {
+  const f = await fixture(2);
+  const first = await store.createHold(f.input(), { livemode: false });
+  await db.query("UPDATE igloo_bookings SET created_at=now()-interval '11 minutes' WHERE id=$1", [first.id]);
+  const firstResults = await Promise.allSettled([store.prepareCheckout(first.id, { mode: 'payment' }), store.expireUnattemptedHolds()]);
+  const firstSaved = (await store.getBooking(first.id))!;
+  if (firstSaved.checkoutParams) { assert.equal(firstSaved.status, 'held'); assert.equal(firstResults[0]!.status, 'fulfilled'); }
+  else { assert.equal(firstSaved.status, 'expired'); assert.equal(firstResults[0]!.status, 'rejected'); }
+
+  const second = await store.createHold(f.input(), { livemode: false });
+  await db.query("UPDATE igloo_bookings SET created_at=now()-interval '11 minutes' WHERE id=$1", [second.id]);
+  const secondResults = await Promise.allSettled([store.expireUnattemptedHolds(), store.prepareCheckout(second.id, { mode: 'payment' })]);
+  const secondSaved = (await store.getBooking(second.id))!;
+  if (secondSaved.checkoutParams) { assert.equal(secondSaved.status, 'held'); assert.equal(secondResults[1]!.status, 'fulfilled'); }
+  else { assert.equal(secondSaved.status, 'expired'); assert.equal(secondResults[1]!.status, 'rejected'); }
+  for (const b of [firstSaved, secondSaved]) assert.equal(b.status === 'expired' && Boolean(b.checkoutParams), false);
+});
+
+test('taxed payment evidence must match subtotal, tax and total before confirmation', async () => {
+  const f = await fixture(4);
+  const variants = [
+    { amountCents: 12_345, subtotalCents: 12_345, taxCents: 0 },
+    { amountCents: 12_962, subtotalCents: 12_344, taxCents: 618 },
+    { amountCents: 12_962 },
+    { amountCents: 12_962, subtotalCents: 12_345, taxCents: 617 },
+  ];
+  for (const [i, fields] of variants.entries()) {
+    const booking = await store.createHold(f.input(), { livemode: false });
+    await store.prepareCheckout(booking.id, { line_items: [{ tax_rates: ['txr_fixture'] }] }, { rateId: 'txr_fixture', percentage: 5, taxCents: 617 });
+    const result = await store.applyStripeEvent(evidence(booking, fields));
+    assert.equal(result.status, i === 3 ? 'confirmed' : 'needs_review');
+    assert.equal(result.totalCents, 12_962);
+  }
+  assert.equal((await db.query('SELECT id FROM igloo_outbox')).rows.length, 1);
+});
+
+test('re-running the additive schema keeps existing tax and package snapshots', async () => {
+  const f = await fixture();
+  const booking = await store.createHold(f.input(), { livemode: false });
+  const params = { line_items: [{ tax_rates: ['txr_fixture'] }] };
+  await store.prepareCheckout(booking.id, params, { rateId: 'txr_fixture', percentage: 5, taxCents: 617 });
+  await store.init();
+  assert.deepEqual(await store.prepareCheckout(booking.id, {}, { rateId: 'txr_different', percentage: 10, taxCents: 1235 }), params);
+  const saved = (await store.getBooking(booking.id))!;
+  assert.deepEqual([saved.amountCents, saved.taxCents, saved.totalCents, saved.taxRateId, saved.taxPercentage], [12_345, 617, 12_962, 'txr_fixture', 5]);
+});
+
 test('concurrent reservations for the last whole igloo permit exactly one booking', async () => {
   const f = await fixture();
   const results = await Promise.allSettled([store.createHold(f.input(), { livemode: false }), store.createHold(f.input(), { livemode: false })]);

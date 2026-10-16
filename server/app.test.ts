@@ -6,6 +6,7 @@ import { createApp } from './app.js';
 import { configuration, type Config } from './config.js';
 import { createDatabase, type Database } from './db.js';
 import { IglooStore } from './store.js';
+import { bookingToken } from './tokens.js';
 
 const ORIGIN = 'http://127.0.0.1:5173';
 const ADMIN = 'maat@example.test';
@@ -32,8 +33,8 @@ after(async () => {
   await db.close();
 });
 
-async function start(config: Config = local) {
-  const server = createServer(createApp(config, db));
+async function start(config: Config = local, database = db) {
+  const server = createServer(createApp(config, database));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   servers.push(server);
   const address = server.address();
@@ -93,6 +94,8 @@ test('checkout uses server price, safely retries and protects occupied capacity 
   assert.match(status.headers.get('x-robots-tag')!, /noindex/);
   const publicData = await status.json() as Record<string, unknown>;
   assert.equal(publicData.amountCents, 12_345);
+  assert.equal(publicData.taxCents, 0);
+  assert.equal(publicData.totalCents, 12_345);
   assert.equal(publicData.currency, 'usd');
   assert.equal(publicData.status, 'held');
   for (const field of ['name', 'email', 'phone', 'requestId', 'policyText', 'sessionId', 'checkoutParams']) assert.equal(field in publicData, false);
@@ -133,11 +136,55 @@ test('admin sign-in protects customer data, single-use links, mutation origin an
   assert.equal(dashboard.status, 200);
   const dashboardBody = await dashboard.json() as { bookings: Record<string, unknown>[] };
   assert.equal(dashboardBody.bookings[0]!.email, input.email);
+  assert.equal(dashboardBody.bookings[0]!.taxCents, 0);
+  assert.equal(dashboardBody.bookings[0]!.totalCents, 12_345);
   assert.equal('checkoutParams' in dashboardBody.bookings[0]!, false);
   assert.equal((await request('/admin/logout', { body: {}, headers: { Cookie, Origin: 'https://untrusted.example' } })).status, 403);
   assert.equal((await request('/admin', { headers: { Cookie } })).status, 200);
   assert.equal((await request('/admin/logout', { body: {}, headers: { Cookie } })).status, 200);
   assert.equal((await request('/admin', { headers: { Cookie } })).status, 401);
+});
+
+test('booking status exposes the reserved subtotal, tax and total without leaking tax configuration', async () => {
+  const request = await start();
+  const { input } = await seed();
+  const booking = await store.createHold(input, { livemode: false });
+  await store.prepareCheckout(booking.id, { line_items: [{ tax_rates: ['txr_fixture'] }] }, { rateId: 'txr_fixture', percentage: 5, taxCents: 617 });
+  const response = await request('/booking', { headers: { Authorization: `Bearer ${bookingToken(booking.id, local.secret)}` } });
+  assert.equal(response.status, 200);
+  const data = await response.json() as Record<string, unknown>;
+  assert.deepEqual([data.amountCents, data.taxCents, data.totalCents], [12345, 617, 12962]);
+  for (const field of ['taxRateId', 'checkoutParams', 'email', 'name']) assert.equal(field in data, false);
+});
+
+test('scheduled jobs require an exact configured bearer token before any database initialization', async () => {
+  let touched = false;
+  const unavailable: Database = {
+    query: async () => { touched = true; throw new Error('Database must not be reached.'); },
+    transaction: async () => { touched = true; throw new Error('Database must not be reached.'); },
+    close: async () => {},
+  };
+  const cronSecret = 'scheduled-jobs-fixture-secret-at-least-thirty-two-characters';
+  const request = await start({ ...local, cronSecret }, unavailable);
+  assert.equal((await request('/jobs')).status, 401);
+  assert.equal((await request(`/jobs?secret=${cronSecret}`)).status, 401);
+  assert.equal((await request('/jobs', { headers: { Authorization: `Bearer ${cronSecret}bad` } })).status, 401);
+  assert.equal((await request('/jobs', { headers: { Authorization: cronSecret } })).status, 401);
+  assert.equal((await request('/jobs', { method: 'POST', headers: { Authorization: `Bearer ${cronSecret}` } })).status, 405);
+  assert.equal((await (await start(local, unavailable))('/jobs', { headers: { Authorization: 'Bearer undefined' } })).status, 401);
+  assert.equal(touched, false);
+});
+
+test('authorized scheduled job can run while customer booking is closed and reveals no records', async () => {
+  const cronSecret = 'scheduled-jobs-fixture-secret-at-least-thirty-two-characters';
+  const request = await start({ ...local, mode: 'live', liveAllowed: false, cronSecret });
+  const first = await request('/jobs', { headers: { Authorization: `Bearer ${cronSecret}` } });
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await first.json(), { ok: true, expiredHolds: 0, reconciled: 0, recovered: 0, skipped: 0, failures: 0 });
+  const repeat = await request('/jobs', { headers: { Authorization: `Bearer ${cronSecret}` } });
+  assert.equal(repeat.status, 200);
+  assert.equal((await (await request('/catalog')).json() as { bookingOpen: boolean }).bookingOpen, false);
 });
 
 test('deployed configuration cannot enable the simulator or bypass the live launch gate', async () => {

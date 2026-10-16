@@ -2,6 +2,8 @@
 
 **October 16 update:** Maát has now supplied the $225/eight-guest package, four platter choices, four October dates and four igloos per seating, plus a Vimeo community promo. See [the new source and implementation notes](IGLOO-CONTENT-2026-10-16.md). The provisional package table below is historical; do not use its $200/six-guest sample as current terms.
 
+**Production follow-up:** Stripe now shows no active account tasks, and API checks confirm payments and payouts enabled. The October 15 missing-bank observation below is historical. See [October 16 production readiness](PRODUCTION-READINESS-2026-10-16.md) for the separate production database, restricted live key, remaining tax/policy/email requirements and launch gates.
+
 ## Current state
 
 - The deployed site is the React/Vite application in `web/`; root `vercel.json` points to `web/dist`. The separate `apps/web` WordPress/Next prototype is not the deployed booking application.

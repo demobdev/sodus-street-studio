@@ -69,7 +69,9 @@ export default function IglooConfirmation() {
             <div><dt className="text-sm text-navy-muted">Package</dt><dd className="mt-1 font-semibold">{booking.packageName}</dd></div>
             <div><dt className="text-sm text-navy-muted">Evening · New York time</dt><dd className="mt-1 leading-relaxed">{eventDate(booking.startsAt)}<br />{eventTime(booking.startsAt)} – {eventTime(booking.endsAt)}</dd></div>
             <div><dt className="text-sm text-navy-muted">Party</dt><dd className="mt-1">One igloo · {booking.guests} {booking.guests === 1 ? 'guest' : 'guests'}</dd></div>
-            <div><dt className="text-sm text-navy-muted">{booking.mode === 'test' ? 'Test amount' : 'Booking amount'}</dt><dd className="mt-1 font-semibold">{money(booking.amountCents, booking.currency)}</dd></div>
+            <div><dt className="text-sm text-navy-muted">Subtotal</dt><dd className="mt-1">{money(booking.amountCents, booking.currency)}</dd></div>
+            <div><dt className="text-sm text-navy-muted">Tax</dt><dd className="mt-1">{money(booking.taxCents ?? 0, booking.currency)}</dd></div>
+            <div><dt className="text-sm text-navy-muted">{booking.mode === 'test' ? 'Test total' : booking.status === 'confirmed' ? 'Total paid' : 'Booking total'}</dt><dd className="mt-1 font-semibold">{money(booking.totalCents ?? booking.amountCents, booking.currency)}</dd></div>
             {booking.status === 'confirmed' ? <div><dt className="text-sm text-navy-muted">Confirmation email</dt><dd className="mt-1">{booking.emailStatus === 'sent' ? 'Sent to the email you provided.' : booking.emailStatus === 'simulated' ? 'Simulated locally; no email sent.' : 'Your booking is confirmed. Email delivery is pending.'}</dd></div> : null}
           </dl>
         ) : null}

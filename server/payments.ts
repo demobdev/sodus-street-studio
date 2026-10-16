@@ -1,7 +1,7 @@
 import Stripe from 'stripe';
 import { randomBytes } from 'node:crypto';
 import type { Config } from './config.js';
-import { IglooStore, StoreError, type Booking, type PaymentEvidence } from './store.js';
+import { IglooStore, StoreError, type Booking, type CheckoutTax, type PaymentEvidence } from './store.js';
 import { bookingToken } from './tokens.js';
 
 export class Payments {
@@ -15,23 +15,47 @@ export class Payments {
     if (!this.stripe || !this.config.stripeAccount) throw new StoreError('Stripe setup is incomplete.', 503, 'NOT_CONFIGURED');
     this.verifiedAccount ??= this.stripe.accounts.retrieveCurrent().then(account => {
       if (account.id !== this.config.stripeAccount) throw new Error('Stripe account mismatch.');
+      if (this.config.mode === 'live' && account.charges_enabled !== true) throw new StoreError('Stripe has not enabled live payments for this account.', 503, 'NOT_CONFIGURED');
     }).catch(error => { this.verifiedAccount = undefined; throw error; });
     await this.verifiedAccount;
   }
   async checkout(booking: Booking): Promise<Booking> {
-    if (booking.status !== 'held') throw new StoreError('This reservation is no longer awaiting checkout. Please review its status.', 409, 'CHECK_STATUS');
+    if (booking.status !== 'held') {
+      if (booking.status === 'expired' && !booking.checkoutParams && !booking.checkoutAttemptedAt && !booking.sessionId) {
+        throw new StoreError('This temporary hold expired before checkout started. Please choose an available time again.', 409, 'HOLD_EXPIRED');
+      }
+      throw new StoreError('This reservation is no longer awaiting checkout. Please review its status.', 409, 'CHECK_STATUS');
+    }
     if (booking.checkoutUrl) return booking;
+    await this.verifyAccount();
+    if (booking.livemode && (!this.config.taxApproved || !this.config.stripeTaxRateId || (booking.checkoutParams && !booking.taxRateId))) {
+      throw new StoreError('The approved booking tax setup is incomplete.', 503, 'TAX_NOT_CONFIGURED');
+    }
+    let tax: CheckoutTax | undefined;
+    if (!booking.checkoutParams && !this.config.mock && this.config.stripeTaxRateId) {
+      if (!this.config.taxApproved) throw new StoreError('The booking tax setup needs approval.', 503, 'TAX_NOT_CONFIGURED');
+      const rate = await this.stripe!.taxRates.retrieve(this.config.stripeTaxRateId);
+      if (rate.id !== this.config.stripeTaxRateId || !rate.active || rate.inclusive || rate.livemode !== booking.livemode ||
+          rate.rate_type === 'flat_amount' || !Number.isFinite(rate.percentage) || rate.percentage < 0 || rate.percentage > 100) {
+        throw new StoreError('The approved tax rate must be active, exclusive and match the payment mode.', 503, 'TAX_NOT_CONFIGURED');
+      }
+      // Stripe manual percentages have up to four decimal places. There is one line item,
+      // so line-level and invoice-level rounding both produce this same integer-cent amount.
+      const scaledPercentage = Math.round(rate.percentage * 10_000);
+      const taxCents = Math.floor((booking.amountCents * scaledPercentage + 500_000) / 1_000_000);
+      tax = { rateId: rate.id, percentage: rate.percentage, taxCents };
+    }
     const token = bookingToken(booking.id, this.config.secret);
     const params = await this.store.prepareCheckout(booking.id, {
       mode: 'payment', submit_type: 'book', customer_email: booking.email,
       client_reference_id: booking.id, metadata: { booking_id: booking.id },
       integration_identifier: `sodus_igloo_${randomBytes(8).toString('hex').replace(/[0-9]/g,'a').slice(0,8)}`,
-      line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: booking.amountCents,
+      line_items: [{ quantity: 1, ...(tax ? { tax_rates: [tax.rateId] } : {}), price_data: { currency: 'usd', unit_amount: booking.amountCents,
         product_data: { name: booking.packageName, description: `${new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeStyle:'short',timeZone:'America/New_York'}).format(new Date(booking.startsAt))} (New York time); ${booking.guests} ${booking.guests === 1 ? 'guest' : 'guests'}` } } }],
       success_url: `${this.config.origin}/igloos/confirmation#token=${token}`,
       cancel_url: `${this.config.origin}/igloos/confirmation?cancelled=1#token=${token}`,
       expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
-    });
+    }, tax);
     if (this.config.mock) {
       return this.store.attachCheckout(booking.id, { sessionId: `mock_${booking.id}`,
         url: `${this.config.origin}/igloos/test-checkout#token=${token}`, expiresAt: new Date(Number(params.expires_at) * 1000).toISOString(),
@@ -49,12 +73,14 @@ export class Payments {
     if (!session.url) throw new Error('Stripe did not return a checkout URL.');
     return this.store.attachCheckout(booking.id, { sessionId: session.id, url: session.url,
       expiresAt: new Date(session.expires_at * 1000).toISOString(), livemode: session.livemode,
-      amountCents: session.amount_total ?? -1, currency: session.currency ?? '' });
+      amountCents: session.amount_total ?? -1, subtotalCents: session.amount_subtotal ?? undefined,
+      taxCents: session.total_details?.amount_tax, currency: session.currency ?? '' });
   }
   evidence(session: Stripe.Checkout.Session, type: string, eventId: string): PaymentEvidence {
     if (!['paid', 'unpaid', 'no_payment_required'].includes(session.payment_status) || !['open', 'complete', 'expired'].includes(session.status ?? '')) throw new Error('Unrecognized Stripe session state.');
     return { eventId, bookingId: session.metadata?.booking_id || '', sessionId: session.id,
       livemode: session.livemode, amountCents: session.amount_total ?? -1, currency: session.currency ?? '',
+      subtotalCents: session.amount_subtotal ?? undefined, taxCents: session.total_details?.amount_tax,
       paymentStatus: session.payment_status as PaymentEvidence['paymentStatus'], sessionStatus: session.status as PaymentEvidence['sessionStatus'], type };
   }
   async reconcile(booking: Booking) {

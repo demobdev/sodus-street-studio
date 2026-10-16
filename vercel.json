@@ -3,7 +3,8 @@
   "buildCommand": "npm run build --prefix web",
   "outputDirectory": "web/dist",
   "framework": "vite",
-  "functions": { "api/igloo.ts": { "includeFiles": "server/schema.sql", "maxDuration": 60 } },
+  "functions": { "api/igloo.ts": { "includeFiles": "server/schema.sql", "maxDuration": 180 } },
+  "crons": [{ "path": "/api/igloo/jobs", "schedule": "*/5 * * * *" }],
   "headers": [
     { "source": "/igloos/manage", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }, { "key": "Referrer-Policy", "value": "no-referrer" }] },
     { "source": "/igloos/confirmation", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }, { "key": "Referrer-Policy", "value": "no-referrer" }] },

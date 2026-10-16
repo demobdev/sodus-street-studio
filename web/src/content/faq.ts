@@ -53,12 +53,12 @@ export const faqCategories: FaqCategory[] = [
       {
         question: 'How do I book a session?',
         answer:
-          'Choose your session type on the Booking page, share your preferred date and project details, and submit your request. At launch, live calendar and payment will run through Acuity Scheduling.',
+          'Choose your session type on the Booking page, share your preferred date and project details, and submit your request. The studio will confirm availability and payment details with you. Sending the form does not reserve a session.',
       },
       {
         question: 'Do I pay when I book?',
         answer:
-          'Yes. Payment is due upon booking for standard sessions. Larger full-day projects may use a deposit model at launch.',
+          'Payment is due when the studio confirms your booking. The request form does not collect payment; the studio will follow up with payment details.',
       },
       {
         question: 'Can I book by the hour?',

@@ -5,6 +5,7 @@ import { createDatabase, type Database } from './db.js';
 import { IglooStore, StoreError, type Booking } from './store.js';
 import { Payments } from './payments.js';
 import type { Config } from './config.js';
+import { runBookingJobs } from './jobs.js';
 
 const config: Config = {
   local: true, mock: false, mode: 'test', liveAllowed: false, origin: 'http://127.0.0.1:5173',
@@ -24,7 +25,8 @@ beforeEach(async () => {
 });
 after(async () => { await db.close(); });
 
-async function fixture(capacity = 1) {
+async function fixture(capacity = 1, overrides: Partial<Config> = {}) {
+  const settings = { ...config, ...overrides };
   const item = await store.savePackage({
     name: 'Test igloo', description: 'Fixture only.', durationMinutes: 90, amountCents: 12_345,
     currency: 'usd', maxGuests: 6, policyText: 'Test policy only.', status: 'active',
@@ -33,21 +35,22 @@ async function fixture(capacity = 1) {
   const hold = () => store.createHold({
     packageId: item.id, slotId: slot.id, name: 'Test Guest', email: 'guest@example.test',
     guests: 3, policyAccepted: true, requestId: randomUUID(),
-  }, { livemode: false });
-  const payments = new Payments(store, config);
+  }, { livemode: settings.mode === 'live' });
+  const payments = new Payments(store, settings);
   // Replace every network method used in these tests; SDK webhook signing remains real.
-  Object.assign(payments.stripe!.accounts, { retrieveCurrent: async () => ({ id: config.stripeAccount }) });
+  Object.assign(payments.stripe!.accounts, { retrieveCurrent: async () => ({ id: config.stripeAccount, charges_enabled: true }) });
+  Object.assign(payments.stripe!.taxRates, { retrieve: async () => { throw new Error('Unexpected tax rate read in test.'); } });
   Object.assign(payments.stripe!.checkout.sessions, {
     create: async () => { throw new Error('Unexpected session creation in test.'); },
     retrieve: async () => { throw new Error('Unexpected session retrieval in test.'); },
   });
-  return { payments, hold };
+  return { payments, hold, settings };
 }
 
 function session(booking: Booking, params: Record<string, unknown> = {}) {
   return {
     id: `cs_test_${booking.id}`, object: 'checkout.session', url: 'https://checkout.stripe.com/test-fixture',
-    expires_at: Math.floor(Date.now() / 1000) + 31 * 60, livemode: false, amount_total: booking.amountCents,
+    expires_at: Math.floor(Date.now() / 1000) + 31 * 60, livemode: booking.livemode, amount_total: booking.amountCents,
     currency: 'usd', metadata: { booking_id: booking.id }, payment_status: 'unpaid', status: 'open', ...params,
   };
 }
@@ -66,6 +69,93 @@ test('the current Stripe account must match before checkout can be created', asy
   assert.equal(currentAccountReads, 1);
   assert.equal(creates, 0);
   assert.equal((await store.getBooking(booking.id))?.status, 'held');
+});
+
+test('approved exclusive tax is snapshotted before Checkout and matching signed totals confirm once', async () => {
+  const { payments, hold } = await fixture(1, { stripeTaxRateId: 'txr_fixture', taxApproved: true });
+  const booking = await hold();
+  // Synthetic 5% fixture, deliberately not a tax recommendation for the venue.
+  Object.assign(payments.stripe!.taxRates, { retrieve: async () => ({ id: 'txr_fixture', active: true, inclusive: false, livemode: false, percentage: 5 }) });
+  Object.assign(payments.stripe!.checkout.sessions, { create: async (params: Record<string, unknown>) => {
+    assert.deepEqual((params.line_items as { tax_rates: string[] }[])[0]?.tax_rates, ['txr_fixture']);
+    assert.equal('automatic_tax' in params, false);
+    const saved = (await store.getBooking(booking.id))!;
+    assert.deepEqual([saved.amountCents, saved.taxCents, saved.totalCents, saved.taxRateId, saved.taxPercentage], [12_345, 617, 12_962, 'txr_fixture', 5]);
+    return session(booking, { amount_subtotal: 12_345, amount_total: 12_962, total_details: { amount_tax: 617 } });
+  } });
+  const checkedOut = await payments.checkout(booking);
+  assert.equal(checkedOut.status, 'held');
+  const payload = JSON.stringify({ id: 'evt_tax_fixture', object: 'event', type: 'checkout.session.completed',
+    data: { object: session(booking, { amount_subtotal: 12_345, amount_total: 12_962, total_details: { amount_tax: 617 }, payment_status: 'paid', status: 'complete' }) } });
+  const signature = payments.stripe!.webhooks.generateTestHeaderString({ payload, secret: config.webhookSecret! });
+  await payments.webhook(Buffer.from(payload), signature);
+  await payments.webhook(Buffer.from(payload), signature);
+  assert.equal((await store.getBooking(booking.id))?.status, 'confirmed');
+  assert.equal((await db.query('SELECT id FROM igloo_outbox')).rows.length, 1);
+});
+
+test('tax snapshots survive a lost Checkout response and later configuration changes', async () => {
+  const { payments, hold, settings } = await fixture(1, { stripeTaxRateId: 'txr_fixture', taxApproved: true });
+  const booking = await hold();
+  let rateReads = 0;
+  let creates = 0;
+  let firstParams: Record<string, unknown>;
+  Object.assign(payments.stripe!.taxRates, { retrieve: async () => { rateReads += 1; return { id: 'txr_fixture', active: true, inclusive: false, livemode: false, percentage: 5 }; } });
+  Object.assign(payments.stripe!.checkout.sessions, { create: async (params: Record<string, unknown>) => {
+    creates += 1;
+    if (creates === 1) { firstParams = structuredClone(params); throw new Error('Lost response'); }
+    assert.deepEqual(params, firstParams);
+    return session(booking, { amount_subtotal: 12_345, amount_total: 12_962, total_details: { amount_tax: 617 } });
+  } });
+  await assert.rejects(payments.checkout(booking), /Lost response/);
+  settings.stripeTaxRateId = 'txr_changed';
+  const retried = await payments.checkout((await store.getBooking(booking.id))!);
+  assert.equal(rateReads, 1);
+  assert.equal(retried.taxRateId, 'txr_fixture');
+  assert.equal(retried.totalCents, 12_962);
+  assert.equal(retried.status, 'held');
+});
+
+test('missing, inactive, inclusive, or wrong-mode tax cannot start a live checkout', async () => {
+  const { payments, hold, settings } = await fixture(1, { mode: 'live', stripeKey: 'rk_live_fixture', taxApproved: false });
+  const booking = await hold();
+  await assert.rejects(payments.checkout(booking), (error: unknown) => error instanceof StoreError && error.code === 'TAX_NOT_CONFIGURED');
+  settings.taxApproved = true;
+  settings.stripeTaxRateId = 'txr_fixture';
+  for (const invalid of [{ active: false }, { inclusive: true }, { livemode: false }, { rate_type: 'flat_amount' }]) {
+    Object.assign(payments.stripe!.taxRates, { retrieve: async () => ({ id: 'txr_fixture', active: true, inclusive: false, livemode: true, percentage: 5, ...invalid }) });
+    await assert.rejects(payments.checkout(booking), (error: unknown) => error instanceof StoreError && error.code === 'TAX_NOT_CONFIGURED');
+  }
+  assert.equal((await store.getBooking(booking.id))?.checkoutParams, null);
+});
+
+test('a live Stripe account without charges enabled cannot create Checkout', async () => {
+  const { payments, hold } = await fixture(1, { mode: 'live', stripeKey: 'rk_live_fixture', taxApproved: true, stripeTaxRateId: 'txr_fixture' });
+  Object.assign(payments.stripe!.accounts, { retrieveCurrent: async () => ({ id: config.stripeAccount, charges_enabled: false }) });
+  await assert.rejects(payments.checkout(await hold()), /not enabled live payments/);
+});
+
+test('tax lookup failure releases only its never-attempted hold after TTL and a stale caller cannot create Checkout', async () => {
+  const { payments, hold } = await fixture(1, { stripeTaxRateId: 'txr_fixture', taxApproved: true });
+  const booking = await hold();
+  Object.assign(payments.stripe!.taxRates, { retrieve: async () => { throw new Error('Tax lookup unavailable'); } });
+  await assert.rejects(payments.checkout(booking), /Tax lookup unavailable/);
+  assert.equal((await store.getBooking(booking.id))?.checkoutParams, null);
+  assert.equal((await store.getBooking(booking.id))?.checkoutAttemptedAt, null);
+  assert.equal((await store.listSlots())[0]!.remaining, 0);
+  await db.query("UPDATE igloo_bookings SET created_at=now()-interval '11 minutes' WHERE id=$1", [booking.id]);
+  const job = await runBookingJobs(store, payments, config);
+  assert.equal(job.expiredHolds, 1);
+  assert.equal((await store.listSlots())[0]!.remaining, 1);
+  await hold(); // Another guest can now reserve the released igloo.
+  Object.assign(payments.stripe!.taxRates, { retrieve: async () => ({ id: 'txr_fixture', active: true, inclusive: false, livemode: false, percentage: 5 }) });
+  let creates = 0;
+  Object.assign(payments.stripe!.checkout.sessions, { create: async () => { creates += 1; return session(booking); } });
+  await assert.rejects(payments.checkout(booking), (error: unknown) => error instanceof StoreError && error.code === 'HOLD_EXPIRED');
+  await assert.rejects(payments.checkout((await store.getBooking(booking.id))!), (error: unknown) => error instanceof StoreError && error.code === 'HOLD_EXPIRED');
+  assert.equal(creates, 0);
+  assert.equal((await store.getBooking(booking.id))?.status, 'expired');
+  assert.equal((await store.listSlots())[0]!.remaining, 0);
 });
 
 test('an unknown checkout outcome keeps inventory and retries identical persisted parameters and idempotency key', async () => {

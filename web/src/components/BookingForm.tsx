@@ -89,8 +89,9 @@ export function BookingForm({ selectedSession = '' }: Props) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <p className="rounded-sm border border-gold/30 bg-ivory-warm px-4 py-3 text-sm text-navy-muted">
-        Requests are emailed to maat@onthemovecs.com for now. Live calendar and
-        payments will run through Acuity Scheduling at launch.
+        Requests are emailed to maat@onthemovecs.com. The studio will confirm
+        availability and payment details with you. Sending this form does not
+        reserve a session or collect payment.
       </p>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -161,7 +162,7 @@ export function BookingForm({ selectedSession = '' }: Props) {
         <input type="checkbox" required className="mt-1" />
         <span>
           I understand cancellations require at least 24 hours notice and that
-          payment is due upon booking.
+          payment is due when the studio confirms my booking.
         </span>
       </label>
 

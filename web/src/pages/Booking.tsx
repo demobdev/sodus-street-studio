@@ -102,8 +102,9 @@ export function Booking() {
             <p className="section-label text-gold-light">Payment Information</p>
             <h2 className="mt-3 font-display text-4xl">Pay When You Book</h2>
             <p className="mt-5 text-ivory/75">
-              Payment is due upon booking. At launch, Acuity Scheduling will handle
-              calendar availability, payments, confirmations, and reminders.
+              Payment is due when your studio booking is confirmed. Send a
+              request and the studio will follow up with availability and payment
+              details. This request form does not collect payment.
             </p>
           </div>
           <div>

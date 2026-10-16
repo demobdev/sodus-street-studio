@@ -40,6 +40,8 @@ export type IglooBooking = {
   endsAt: string
   guests: number
   amountCents: number
+  taxCents: number
+  totalCents: number
   currency: string
   emailStatus: string
   checkoutUrl?: string

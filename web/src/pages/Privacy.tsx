@@ -26,9 +26,13 @@ export function Privacy() {
           <div>
             <h2 className="font-display text-2xl text-navy">Booking and Payment</h2>
             <p className="mt-2">
-              Booking and payment details may be processed through third-party
-              tools such as Acuity Scheduling and payment processors. Those
-              providers handle payment data according to their own policies.
+              Contact, studio booking requests, and igloo inquiries are sent to
+              the studio through FormSubmit. When online igloo reservations are
+              available, reservation details are stored in our booking system,
+              payments are handled by Stripe, and confirmation emails are sent
+              through our email delivery provider. These providers process
+              information according to their own privacy policies. Payment card
+              details are entered on Stripe’s checkout page.
             </p>
           </div>
           <div>

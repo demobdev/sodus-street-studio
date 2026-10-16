@@ -21,19 +21,23 @@ export interface Booking {
   id: string; reference: string; requestId: string; packageId: string; slotId: string; status: BookingStatus;
   name: string; email: string; phone: string; guests: number; packageName: string;
   startsAt: string; endsAt: string; amountCents: number; currency: 'usd'; policyText: string;
+  taxCents: number; totalCents: number; taxRateId: string | null; taxPercentage: number | null;
   livemode: boolean; sessionId: string | null; checkoutUrl: string | null; expiresAt: string | null;
   checkoutParams: Record<string, unknown> | null; checkoutAttemptedAt: string | null;
   emailStatus: EmailStatus; reviewReason: string | null; createdAt: string;
 }
 export interface CheckoutAttachment {
   sessionId: string; url: string; expiresAt: string; livemode: boolean; amountCents: number; currency: string;
+  subtotalCents?: number; taxCents?: number;
 }
 export interface PaymentEvidence {
   eventId: string; bookingId: string; sessionId: string; livemode: boolean; amountCents: number;
+  subtotalCents?: number; taxCents?: number;
   currency: string; paymentStatus: 'paid' | 'unpaid' | 'no_payment_required';
   sessionStatus: 'open' | 'complete' | 'expired'; type: string;
 }
 export interface OutboxItem { id: string; claimToken: string; booking: Booking; attempts: number }
+export interface CheckoutTax { rateId: string; percentage: number; taxCents: number }
 export class StoreError extends Error {
   constructor(message: string, public status: number, public code: string) { super(message); this.name = 'StoreError'; }
 }
@@ -65,6 +69,9 @@ function mapBooking(row: Row): Booking {
     name: String(row.name), email: String(row.email), phone: String(row.phone), guests: Number(row.guests),
     packageName: String(row.package_name), startsAt: iso(row.starts_at), endsAt: iso(row.ends_at),
     amountCents: Number(row.amount_cents), currency: 'usd', policyText: String(row.policy_text),
+    taxCents: Number(row.tax_cents ?? 0), totalCents: Number(row.total_cents ?? row.amount_cents),
+    taxRateId: row.tax_rate_id == null ? null : String(row.tax_rate_id),
+    taxPercentage: row.tax_percentage == null ? null : Number(row.tax_percentage),
     livemode: Boolean(row.livemode), sessionId: row.session_id == null ? null : String(row.session_id),
     checkoutUrl: row.checkout_url == null ? null : String(row.checkout_url), expiresAt: optionalIso(row.expires_at),
     checkoutParams: row.checkout_params as Record<string, unknown> | null, checkoutAttemptedAt: optionalIso(row.checkout_attempted_at),
@@ -75,6 +82,14 @@ async function lockedBooking(db: Queryable, id: string): Promise<Row> {
   const { rows } = await db.query('SELECT * FROM igloo_bookings WHERE id=$1 FOR UPDATE', [id]);
   if (!rows[0]) throw new StoreError('Booking not found.', 404, 'NOT_FOUND');
   return rows[0];
+}
+
+function amountMismatch(row: Row, payment: { amountCents: number; subtotalCents?: number; taxCents?: number }): boolean {
+  if (Number(row.total_cents ?? row.amount_cents) !== payment.amountCents) return true;
+  // Taxed bookings require all signed components, not merely a coincidentally matching total.
+  if (row.tax_rate_id != null && (payment.subtotalCents == null || payment.taxCents == null)) return true;
+  return (payment.subtotalCents != null && payment.subtotalCents !== Number(row.amount_cents)) ||
+    (payment.taxCents != null && payment.taxCents !== Number(row.tax_cents ?? 0));
 }
 
 export class IglooStore {
@@ -182,7 +197,7 @@ export class IglooStore {
   async attachCheckout(id: string, session: CheckoutAttachment): Promise<Booking> {
     return this.db.transaction(async (tx) => {
       const row = await lockedBooking(tx, id);
-      if ((row.session_id && row.session_id !== session.sessionId) || row.livemode !== session.livemode || Number(row.amount_cents) !== session.amountCents || row.currency !== session.currency.toLowerCase()) {
+      if ((row.session_id && row.session_id !== session.sessionId) || row.livemode !== session.livemode || amountMismatch(row, session) || row.currency !== session.currency.toLowerCase()) {
         const { rows } = await tx.query("UPDATE igloo_bookings SET status='needs_review',review_reason='Checkout session did not match the reserved booking',updated_at=now() WHERE id=$1 RETURNING *", [id]);
         return mapBooking(rows[0]);
       }
@@ -192,11 +207,37 @@ export class IglooStore {
   }
 
   /** Persist exact Stripe creation parameters before sending any request, so retries reuse identical inputs. */
-  async prepareCheckout(id: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async prepareCheckout(id: string, params: Record<string, unknown>, tax?: CheckoutTax): Promise<Record<string, unknown>> {
+    if (tax && (!/^txr_[A-Za-z0-9]+$/.test(tax.rateId) || !Number.isFinite(tax.percentage) || tax.percentage < 0 || tax.percentage > 100 || !Number.isSafeInteger(tax.taxCents) || tax.taxCents < 0)) throw badInput('Invalid checkout tax snapshot.');
+    // Capture totals in the same write as the idempotent request. A changed tax setting must not
+    // mutate a checkout whose Stripe response was lost or whose customer has already paid.
     const { rows } = await this.db.query(`UPDATE igloo_bookings SET checkout_params=COALESCE(checkout_params,$2::jsonb),
-      checkout_attempted_at=COALESCE(checkout_attempted_at,now()),updated_at=now() WHERE id=$1 RETURNING checkout_params`, [id, JSON.stringify(params)]);
-    if (!rows[0]) throw new StoreError('Booking not found.', 404, 'NOT_FOUND');
+      tax_rate_id=CASE WHEN checkout_params IS NULL THEN $3 ELSE tax_rate_id END,
+      tax_percentage=CASE WHEN checkout_params IS NULL THEN $4 ELSE tax_percentage END,
+      tax_cents=CASE WHEN checkout_params IS NULL THEN $5 ELSE tax_cents END,
+      total_cents=CASE WHEN checkout_params IS NULL THEN amount_cents+$5 ELSE total_cents END,
+      checkout_attempted_at=COALESCE(checkout_attempted_at,now()),updated_at=now() WHERE id=$1 AND status='held' RETURNING checkout_params`,
+    [id, JSON.stringify(params), tax?.rateId ?? null, tax?.percentage ?? null, tax?.taxCents ?? 0]);
+    if (!rows[0]) {
+      const exists = await this.getBooking(id);
+      if (!exists) throw new StoreError('Booking not found.', 404, 'NOT_FOUND');
+      if (exists.status === 'expired' && !exists.checkoutParams && !exists.checkoutAttemptedAt && !exists.sessionId) {
+        throw new StoreError('This temporary hold expired before checkout started. Please choose an available time again.', 409, 'HOLD_EXPIRED');
+      }
+      throw new StoreError('This reservation is no longer awaiting checkout. Please start a new reservation.', 409, 'CHECK_STATUS');
+    }
     return rows[0].checkout_params as Record<string, unknown>;
+  }
+
+  /** Release abandoned requests only when Stripe could not have received a creation request. */
+  async expireUnattemptedHolds(): Promise<number> {
+    // Ten minutes exceeds the 180-second request budget. The same row lock used by
+    // prepareCheckout serializes this release against persisting the first Stripe attempt.
+    const { rowCount } = await this.db.query(`UPDATE igloo_bookings SET status='expired',updated_at=now()
+      WHERE status='held' AND created_at < now()-interval '10 minutes'
+        AND checkout_params IS NULL AND checkout_attempted_at IS NULL AND session_id IS NULL
+      RETURNING id`);
+    return rowCount;
   }
 
   async applyStripeEvent(event: PaymentEvidence): Promise<Booking> {
@@ -213,7 +254,7 @@ export class IglooStore {
       const row = found;
       let status = row.status as BookingStatus;
       let reason: string | null = row.review_reason == null ? null : String(row.review_reason);
-      const mismatch = (row.session_id != null && row.session_id !== event.sessionId) || row.livemode !== event.livemode || Number(row.amount_cents) !== event.amountCents || row.currency !== event.currency.toLowerCase();
+      const mismatch = (row.session_id != null && row.session_id !== event.sessionId) || row.livemode !== event.livemode || amountMismatch(row, event) || row.currency !== event.currency.toLowerCase();
       const paid = event.paymentStatus === 'paid' && event.sessionStatus === 'complete';
       const successEvidence = ['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'reconcile'].includes(event.type);
       if (mismatch) { status = 'needs_review'; reason = 'Payment session, mode, amount or currency does not match this reservation.'; }

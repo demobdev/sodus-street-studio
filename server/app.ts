@@ -7,6 +7,7 @@ import { Payments } from './payments.js';
 import { bookingId, bookingToken } from './tokens.js';
 import { readiness, type Config } from './config.js';
 import { deliverConfirmations, sendEmail } from './email.js';
+import { authorizedJob, runBookingJobs } from './jobs.js';
 
 const header = (req: IncomingMessage, name: string) => { const value = req.headers[name]; return Array.isArray(value) ? value[0] : value || ''; };
 const cookieName = 'sodus_igloo_admin';
@@ -14,6 +15,7 @@ function cookie(req: IncomingMessage) { return header(req,'cookie').split(';').m
 export function publicBooking(b: Booking) {
   return { mode: b.livemode ? 'live' : 'test', reference: b.reference, status: b.status, packageName: b.packageName,
     startsAt: b.startsAt, endsAt: b.endsAt, guests: b.guests, amountCents: b.amountCents, currency: b.currency,
+    taxCents: b.taxCents, totalCents: b.totalCents,
     emailStatus: b.emailStatus, ...(b.status === 'held' && b.checkoutUrl ? { checkoutUrl: b.checkoutUrl } : {}) };
 }
 async function rawBody(req: IncomingMessage): Promise<Buffer> {
@@ -36,6 +38,13 @@ export function createApp(c: Config, existingDb?: Database) {
       const url = new URL(req.url || '/', c.origin);
       const route = url.searchParams.has('route') ? `/${url.searchParams.get('route')}` : url.pathname.replace(/^\/api\/igloo/, '');
       const method = req.method || 'GET';
+      if (route === '/jobs') {
+        if (method !== 'GET') return reply(405, { error: 'Method not allowed.' });
+        if (!authorizedJob(header(req, 'authorization'), c.cronSecret)) return reply(401, { error: 'Unauthorized.', code: 'UNAUTHORIZED' });
+        const { store, payments } = await initialize();
+        const result = await runBookingJobs(store, payments, c);
+        return reply(result.failures ? 503 : 200, { ok: result.failures === 0, ...result });
+      }
       const missing = readiness(c);
       if (route === '/catalog' && method === 'GET' && (c.secret.length < 32 || (!c.mock && !c.databaseUrl))) {
         return reply(200, { mode: 'unconfigured', bookingOpen: false, notice: 'Online reservations are not open yet. Send an inquiry to plan your visit.', packages: [], slots: [] });
@@ -115,7 +124,7 @@ export function createApp(c: Config, existingDb?: Database) {
           await auth.logout(session); res.setHeader('Set-Cookie',`${cookieName}=; Path=/api/igloo; HttpOnly; SameSite=Strict; Max-Age=0${c.local?'':'; Secure'}`); return reply(200,{ok:true});
         }
         if (route === '/admin' && method === 'GET') {
-          const bookings = (await store.listBookings()).map(({id,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,currency,emailStatus,createdAt})=>({id,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,currency,emailStatus,createdAt}));
+          const bookings = (await store.listBookings()).map(({id,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,taxCents,totalCents,currency,emailStatus,createdAt})=>({id,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,taxCents,totalCents,currency,emailStatus,createdAt}));
           return reply(200,{mode:c.mode,readiness:[...missing,...c.mock?['Local simulation: no Stripe payment or email is sent.']:[]],packages:await store.listPackages(true),slots:await store.listSlots(true),bookings});
         }
         if (route === '/admin/package' && method === 'POST') { await store.savePackage(body as unknown as PackageInput); return reply(200,{ok:true}); }

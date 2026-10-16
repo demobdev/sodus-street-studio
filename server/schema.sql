@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS igloo_bookings (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS tax_rate_id text;
+ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS tax_percentage numeric(7,4) CHECK (tax_percentage >= 0 AND tax_percentage <= 100);
+ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS tax_cents integer NOT NULL DEFAULT 0 CHECK (tax_cents >= 0);
+ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS total_cents integer CHECK (total_cents = amount_cents + tax_cents);
 CREATE INDEX IF NOT EXISTS igloo_bookings_slot_status ON igloo_bookings(slot_id, status);
 CREATE TABLE IF NOT EXISTS igloo_payment_events (
   event_id text PRIMARY KEY,

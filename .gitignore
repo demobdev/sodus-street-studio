@@ -6,6 +6,7 @@ web/node_modules/
 web/dist/
 dist/
 *.local
+*.local.*
 
 # Env
 .env
@@ -24,3 +25,8 @@ Thumbs.db
 
 # Local scratch
 logo-source.png
+
+apps/web/node_modules/
+apps/web/.next/
+cms/*.zip
+.data/

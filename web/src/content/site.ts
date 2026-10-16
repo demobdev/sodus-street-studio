@@ -26,6 +26,7 @@ export const site = {
     'Late cancellations may incur a fee.',
   ],
   nav: [
+    { label: 'Igloo Events', href: '/igloos' },
     { label: 'Services', href: '/services' },
     { label: 'Studio Space', href: '/studio-space' },
     { label: 'Portfolio', href: '/portfolio' },

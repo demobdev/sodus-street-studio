@@ -1,0 +1,22 @@
+{
+  "name": "sodus-booking-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:api": "tsx --env-file=.env.local server/dev.ts",
+    "test": "tsx --test server/*.test.ts",
+    "check": "tsc --noEmit",
+    "db:migrate": "tsx --env-file=.env.local server/migrate.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.10",
+    "pg": "8.23.1",
+    "stripe": "23.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/pg": "^8.15.6",
+    "tsx": "4.23.15",
+    "typescript": "~6.0.2"
+  }
+}

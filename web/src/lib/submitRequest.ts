@@ -21,12 +21,19 @@ export async function submitStudioRequest(
       }),
     })
 
-    const data = (await response.json()) as { success?: string | boolean; message?: string }
+    const data: unknown = await response.json()
+    const result =
+      typeof data === 'object' && data !== null
+        ? (data as { success?: unknown; message?: unknown })
+        : null
 
-    if (!response.ok) {
+    if (!response.ok || (result?.success !== true && result?.success !== 'true')) {
       return {
         ok: false,
-        error: data.message || 'Unable to send request. Please try again.',
+        error:
+          typeof result?.message === 'string' && result.message.trim()
+            ? result.message
+            : 'We could not confirm your request was sent. Please try again or email maat@onthemovecs.com.',
       }
     }
 

@@ -5,11 +5,20 @@ import { Booking } from './pages/Booking'
 import { Contact } from './pages/Contact'
 import { FAQ } from './pages/FAQ'
 import { Home } from './pages/Home'
+import { Igloos } from './pages/Igloos'
 import { Portfolio } from './pages/Portfolio'
 import { Privacy } from './pages/Privacy'
 import { Services } from './pages/Services'
 import { StudioSpace } from './pages/StudioSpace'
 import { Terms } from './pages/Terms'
+
+const IglooConfirmation = lazy(() => import('./pages/IglooConfirmation'))
+const IglooTestCheckout = lazy(() => import('./pages/IglooTestCheckout'))
+const IglooManage = lazy(() => import('./pages/IglooManage'))
+
+function BookingPageLoading() {
+  return <div role="status" className="container-site px-5 py-16">Loading booking details…</div>
+}
 
 export default function App() {
   return (
@@ -17,6 +26,10 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Home />} />
+          <Route path="igloos" element={<Igloos />} />
+          <Route path="igloos/confirmation" element={<Suspense fallback={<BookingPageLoading />}><IglooConfirmation /></Suspense>} />
+          <Route path="igloos/test-checkout" element={<Suspense fallback={<BookingPageLoading />}><IglooTestCheckout /></Suspense>} />
+          <Route path="igloos/manage" element={<Suspense fallback={<BookingPageLoading />}><IglooManage /></Suspense>} />
           <Route path="about" element={<About />} />
           <Route path="services" element={<Services />} />
           <Route path="studio-space" element={<StudioSpace />} />
@@ -32,3 +45,4 @@ export default function App() {
     </BrowserRouter>
   )
 }
+import { lazy, Suspense } from 'react'

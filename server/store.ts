@@ -1,0 +1,277 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import type { Database, Queryable } from './db.js';
+
+export type BookingStatus = 'held' | 'awaiting_payment' | 'confirmed' | 'expired' | 'cancelled' | 'needs_review';
+export type EmailStatus = 'pending' | 'sending' | 'sent' | 'failed';
+export interface Package {
+  id: string; name: string; description: string; durationMinutes: number; amountCents: number;
+  currency: 'usd'; maxGuests: number; policyText: string; status: 'draft' | 'active';
+}
+export type PackageInput = Omit<Package, 'id'> & { id?: string };
+export interface Slot {
+  id: string; startsAt: string; endsAt: string; capacity: number; remaining: number; status: 'open' | 'closed';
+}
+export type SlotInput = Omit<Slot, 'id' | 'remaining'> & { id?: string };
+export interface HoldInput {
+  packageId: string; slotId: string; name: string; email: string; phone?: string;
+  guests: number; policyAccepted: boolean; requestId: string;
+}
+export interface Booking {
+  id: string; reference: string; requestId: string; packageId: string; slotId: string; status: BookingStatus;
+  name: string; email: string; phone: string; guests: number; packageName: string;
+  startsAt: string; endsAt: string; amountCents: number; currency: 'usd'; policyText: string;
+  livemode: boolean; sessionId: string | null; checkoutUrl: string | null; expiresAt: string | null;
+  checkoutParams: Record<string, unknown> | null; checkoutAttemptedAt: string | null;
+  emailStatus: EmailStatus; reviewReason: string | null; createdAt: string;
+}
+export interface CheckoutAttachment {
+  sessionId: string; url: string; expiresAt: string; livemode: boolean; amountCents: number; currency: string;
+}
+export interface PaymentEvidence {
+  eventId: string; bookingId: string; sessionId: string; livemode: boolean; amountCents: number;
+  currency: string; paymentStatus: 'paid' | 'unpaid' | 'no_payment_required';
+  sessionStatus: 'open' | 'complete' | 'expired'; type: string;
+}
+export interface OutboxItem { id: string; claimToken: string; booking: Booking; attempts: number }
+export class StoreError extends Error {
+  constructor(message: string, public status: number, public code: string) { super(message); this.name = 'StoreError'; }
+}
+
+type Row = Record<string, unknown>;
+const occupied = "('held','awaiting_payment','confirmed','needs_review')";
+// Launch default: stop new reservations 35 minutes before arrival, leaving margin for the 31-minute Checkout session.
+const bookingCutoff = "now() + interval '35 minutes'";
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const iso = (value: unknown): string => new Date(value as string | number | Date).toISOString();
+const optionalIso = (value: unknown): string | null => value == null ? null : iso(value);
+const badInput = (message: string) => new StoreError(message, 400, 'INVALID_INPUT');
+function requireUuid(value: string, label: string) { if (!uuid.test(value)) throw badInput(`${label} must be a UUID.`); }
+function boundedInt(value: number, min: number, max: number, label: string) {
+  if (!Number.isInteger(value) || value < min || value > max) throw badInput(`${label} is outside the allowed range.`);
+}
+function mapPackage(row: Row): Package {
+  return { id: String(row.id), name: String(row.name), description: String(row.description),
+    durationMinutes: Number(row.duration_minutes), amountCents: Number(row.amount_cents), currency: 'usd',
+    maxGuests: Number(row.max_guests), policyText: String(row.policy_text), status: row.status as Package['status'] };
+}
+function mapSlot(row: Row): Slot {
+  return { id: String(row.id), startsAt: iso(row.starts_at), endsAt: iso(row.ends_at), capacity: Number(row.capacity),
+    remaining: Math.max(0, Number(row.capacity) - Number(row.occupied ?? 0)), status: row.status as Slot['status'] };
+}
+function mapBooking(row: Row): Booking {
+  return { id: String(row.id), reference: String(row.reference), requestId: String(row.request_id),
+    packageId: String(row.package_id), slotId: String(row.slot_id), status: row.status as BookingStatus,
+    name: String(row.name), email: String(row.email), phone: String(row.phone), guests: Number(row.guests),
+    packageName: String(row.package_name), startsAt: iso(row.starts_at), endsAt: iso(row.ends_at),
+    amountCents: Number(row.amount_cents), currency: 'usd', policyText: String(row.policy_text),
+    livemode: Boolean(row.livemode), sessionId: row.session_id == null ? null : String(row.session_id),
+    checkoutUrl: row.checkout_url == null ? null : String(row.checkout_url), expiresAt: optionalIso(row.expires_at),
+    checkoutParams: row.checkout_params as Record<string, unknown> | null, checkoutAttemptedAt: optionalIso(row.checkout_attempted_at),
+    emailStatus: row.email_status as EmailStatus, reviewReason: row.review_reason == null ? null : String(row.review_reason),
+    createdAt: iso(row.created_at) };
+}
+async function lockedBooking(db: Queryable, id: string): Promise<Row> {
+  const { rows } = await db.query('SELECT * FROM igloo_bookings WHERE id=$1 FOR UPDATE', [id]);
+  if (!rows[0]) throw new StoreError('Booking not found.', 404, 'NOT_FOUND');
+  return rows[0];
+}
+
+export class IglooStore {
+  constructor(public readonly db: Database) {}
+
+  async init(): Promise<void> {
+    const schema = await readFile(new URL('./schema.sql', import.meta.url), 'utf8');
+    // Schema contains only simple statements, so both Pg and PGlite use the same migration path.
+    await this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(741001)');
+      for (const statement of schema.split(';').map((part) => part.trim()).filter(Boolean)) await tx.query(statement);
+    });
+  }
+
+  async listPackages(includeDraft = false): Promise<Package[]> {
+    const result = await this.db.query(`SELECT * FROM igloo_packages ${includeDraft ? '' : "WHERE status='active'"} ORDER BY name`);
+    return result.rows.map(mapPackage);
+  }
+
+  async savePackage(input: PackageInput): Promise<Package> {
+    const id = input.id ?? randomUUID(); requireUuid(id, 'Package id');
+    if (!input.name?.trim() || input.name.length > 160 || !input.policyText?.trim() || input.policyText.length > 10_000 || typeof input.description !== 'string' || input.description.length > 5_000) throw badInput('Provide a name, description and booking policy.');
+    boundedInt(input.amountCents, 50, 1_000_000, 'Price'); boundedInt(input.durationMinutes, 15, 1_440, 'Duration'); boundedInt(input.maxGuests, 1, 100, 'Party size');
+    if (input.currency !== 'usd' || !['active', 'draft'].includes(input.status)) throw badInput('Invalid package currency or status.');
+    const { rows } = await this.db.query(`INSERT INTO igloo_packages (id,name,description,duration_minutes,amount_cents,currency,max_guests,policy_text,status)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,
+      duration_minutes=EXCLUDED.duration_minutes,amount_cents=EXCLUDED.amount_cents,max_guests=EXCLUDED.max_guests,
+      policy_text=EXCLUDED.policy_text,status=EXCLUDED.status,updated_at=now() RETURNING *`,
+    [id, input.name.trim(), input.description.trim(), input.durationMinutes, input.amountCents, input.currency, input.maxGuests, input.policyText.trim(), input.status]);
+    return mapPackage(rows[0]);
+  }
+
+  async listSlots(includeClosed = false): Promise<Slot[]> {
+    const { rows } = await this.db.query(`SELECT s.*, (SELECT count(*) FROM igloo_bookings b WHERE b.slot_id=s.id AND b.status IN ${occupied})::integer AS occupied
+      FROM igloo_slots s ${includeClosed ? '' : `WHERE s.status='open' AND s.starts_at > ${bookingCutoff}`} ORDER BY starts_at`);
+    return rows.map(mapSlot);
+  }
+
+  async saveSlot(input: SlotInput): Promise<Slot> {
+    const id = input.id ?? randomUUID(); requireUuid(id, 'Slot id');
+    if (!Number.isFinite(Date.parse(input.startsAt)) || !Number.isFinite(Date.parse(input.endsAt)) || Date.parse(input.endsAt) <= Date.parse(input.startsAt)) throw badInput('Provide a valid start and end time.');
+    boundedInt(input.capacity, 1, 100, 'Igloo capacity');
+    if (!['open', 'closed'].includes(input.status)) throw badInput('Invalid slot status.');
+    return this.db.transaction(async (tx) => {
+      // Serializes all schedule edits, including concurrent inserts where no row yet exists to lock.
+      await tx.query('SELECT pg_advisory_xact_lock(741002)');
+      const previous = (await tx.query('SELECT * FROM igloo_slots WHERE id=$1 FOR UPDATE', [id])).rows[0];
+      const count = Number((await tx.query(`SELECT count(*) AS count FROM igloo_bookings WHERE slot_id=$1 AND status IN ${occupied}`, [id])).rows[0].count);
+      if (input.capacity < count) throw new StoreError('Capacity cannot be smaller than existing reservations.', 409, 'CAPACITY_IN_USE');
+      if (previous && count && (iso(previous.starts_at) !== iso(input.startsAt) || iso(previous.ends_at) !== iso(input.endsAt))) throw new StoreError('A reserved time cannot be moved. Create a separate time and handle existing bookings first.', 409, 'SLOT_IN_USE');
+      const conflict = await tx.query('SELECT id FROM igloo_slots WHERE id<>$1 AND starts_at<$3 AND ends_at>$2 LIMIT 1', [id, input.startsAt, input.endsAt]);
+      if (conflict.rows.length) throw new StoreError('This time overlaps another igloo time slot.', 409, 'SLOT_OVERLAP');
+      const { rows } = await tx.query(`INSERT INTO igloo_slots (id,starts_at,ends_at,capacity,status) VALUES ($1,$2,$3,$4,$5)
+        ON CONFLICT (id) DO UPDATE SET starts_at=EXCLUDED.starts_at,ends_at=EXCLUDED.ends_at,capacity=EXCLUDED.capacity,status=EXCLUDED.status RETURNING *`,
+      [id, input.startsAt, input.endsAt, input.capacity, input.status]);
+      return mapSlot({ ...rows[0], occupied: count });
+    });
+  }
+
+  async createHold(input: HoldInput, options: { livemode: boolean }): Promise<Booking> {
+    requireUuid(input.requestId, 'Request id'); requireUuid(input.packageId, 'Package id'); requireUuid(input.slotId, 'Slot id');
+    if (!input.name?.trim() || input.name.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email) || input.email.length > 254 || (input.phone?.length ?? 0) > 40 || input.policyAccepted !== true) throw badInput('Provide your contact details and accept the booking policy.');
+    boundedInt(input.guests, 1, 100, 'Party size');
+    const clean = { ...input, requestId: input.requestId.toLowerCase(), packageId: input.packageId.toLowerCase(), slotId: input.slotId.toLowerCase(),
+      name: input.name.trim(), email: input.email.trim().toLowerCase(), phone: input.phone?.trim() ?? '' };
+    const fingerprint = createHash('sha256').update(JSON.stringify([clean.packageId, clean.slotId, clean.name, clean.email, clean.phone, clean.guests, true, options.livemode])).digest('hex');
+    return this.db.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`igloo-request:${clean.requestId}`]);
+      const replay = (await tx.query('SELECT * FROM igloo_bookings WHERE request_id=$1', [clean.requestId])).rows[0];
+      if (replay) {
+        if (replay.request_fingerprint !== fingerprint) throw new StoreError('This request id was already used for different booking details. Please start a new booking.', 409, 'IDEMPOTENCY_CONFLICT');
+        return mapBooking(replay);
+      }
+      const item = (await tx.query("SELECT * FROM igloo_packages WHERE id=$1 AND status='active' FOR SHARE", [input.packageId])).rows[0];
+      const slot = (await tx.query(`SELECT * FROM igloo_slots WHERE id=$1 AND status='open' AND starts_at>${bookingCutoff} FOR UPDATE`, [input.slotId])).rows[0];
+      if (!item || !slot) throw new StoreError('This package or time is no longer available.', 409, 'UNAVAILABLE');
+      if (input.guests > Number(item.max_guests)) throw badInput('The party exceeds this package’s guest limit.');
+      if (Date.parse(iso(slot.ends_at)) - Date.parse(iso(slot.starts_at)) !== Number(item.duration_minutes) * 60_000) throw badInput('This package does not match the selected time slot.');
+      const count = Number((await tx.query(`SELECT count(*) AS count FROM igloo_bookings WHERE slot_id=$1 AND status IN ${occupied}`, [input.slotId])).rows[0].count);
+      if (count >= Number(slot.capacity)) throw new StoreError('This time is fully booked. Please choose another.', 409, 'SOLD_OUT');
+      const id = randomUUID();
+      const { rows } = await tx.query(`INSERT INTO igloo_bookings (id,reference,request_id,request_fingerprint,package_id,slot_id,status,name,email,phone,guests,package_name,starts_at,ends_at,amount_cents,currency,policy_text,livemode)
+        VALUES ($1,$2,$3,$4,$5,$6,'held',$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+      [id, `IG-${id.replaceAll('-', '').slice(0, 12).toUpperCase()}`, input.requestId, fingerprint, input.packageId, input.slotId,
+        clean.name, clean.email, clean.phone, input.guests, item.name, slot.starts_at, slot.ends_at, item.amount_cents, item.currency, item.policy_text, options.livemode]);
+      return mapBooking(rows[0]);
+    });
+  }
+
+  async getBooking(id: string): Promise<Booking | null> {
+    requireUuid(id, 'Booking id');
+    const { rows } = await this.db.query('SELECT * FROM igloo_bookings WHERE id=$1', [id]);
+    return rows[0] ? mapBooking(rows[0]) : null;
+  }
+
+  async markNeedsReview(id: string, reason: string): Promise<Booking> {
+    const { rows } = await this.db.query(`UPDATE igloo_bookings SET
+      status=CASE WHEN status IN ('held','awaiting_payment') THEN 'needs_review' ELSE status END,
+      review_reason=CASE WHEN status IN ('held','awaiting_payment') THEN $2 ELSE review_reason END,
+      updated_at=now() WHERE id=$1 RETURNING *`, [id, reason.slice(0, 500)]);
+    if (!rows[0]) throw new StoreError('Booking not found.', 404, 'NOT_FOUND');
+    return mapBooking(rows[0]);
+  }
+
+  async attachCheckout(id: string, session: CheckoutAttachment): Promise<Booking> {
+    return this.db.transaction(async (tx) => {
+      const row = await lockedBooking(tx, id);
+      if ((row.session_id && row.session_id !== session.sessionId) || row.livemode !== session.livemode || Number(row.amount_cents) !== session.amountCents || row.currency !== session.currency.toLowerCase()) {
+        const { rows } = await tx.query("UPDATE igloo_bookings SET status='needs_review',review_reason='Checkout session did not match the reserved booking',updated_at=now() WHERE id=$1 RETURNING *", [id]);
+        return mapBooking(rows[0]);
+      }
+      const { rows } = await tx.query('UPDATE igloo_bookings SET session_id=$2,checkout_url=$3,expires_at=$4,updated_at=now() WHERE id=$1 RETURNING *', [id, session.sessionId, session.url, session.expiresAt]);
+      return mapBooking(rows[0]);
+    });
+  }
+
+  /** Persist exact Stripe creation parameters before sending any request, so retries reuse identical inputs. */
+  async prepareCheckout(id: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const { rows } = await this.db.query(`UPDATE igloo_bookings SET checkout_params=COALESCE(checkout_params,$2::jsonb),
+      checkout_attempted_at=COALESCE(checkout_attempted_at,now()),updated_at=now() WHERE id=$1 RETURNING checkout_params`, [id, JSON.stringify(params)]);
+    if (!rows[0]) throw new StoreError('Booking not found.', 404, 'NOT_FOUND');
+    return rows[0].checkout_params as Record<string, unknown>;
+  }
+
+  async applyStripeEvent(event: PaymentEvidence): Promise<Booking> {
+    return this.db.transaction(async (tx) => {
+      // Serialize duplicate delivery even when deliveries claim different booking ids.
+      await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`igloo-event:${event.eventId}`]);
+      const processed = (await tx.query('SELECT * FROM igloo_payment_events WHERE event_id=$1', [event.eventId])).rows[0];
+      if (processed) {
+        if (processed.booking_id !== event.bookingId || processed.session_id !== event.sessionId) throw new StoreError('Payment event identity mismatch.', 409, 'EVENT_CONFLICT');
+        return mapBooking(await lockedBooking(tx, event.bookingId));
+      }
+      const found = (await tx.query('SELECT * FROM igloo_bookings WHERE id=$1 FOR UPDATE', [event.bookingId])).rows[0];
+      if (!found) throw new StoreError('Reservation is not available yet; retry delivery.', 503, 'BOOKING_NOT_FOUND');
+      const row = found;
+      let status = row.status as BookingStatus;
+      let reason: string | null = row.review_reason == null ? null : String(row.review_reason);
+      const mismatch = (row.session_id != null && row.session_id !== event.sessionId) || row.livemode !== event.livemode || Number(row.amount_cents) !== event.amountCents || row.currency !== event.currency.toLowerCase();
+      const paid = event.paymentStatus === 'paid' && event.sessionStatus === 'complete';
+      const successEvidence = ['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'reconcile'].includes(event.type);
+      if (mismatch) { status = 'needs_review'; reason = 'Payment session, mode, amount or currency does not match this reservation.'; }
+      else if (status === 'needs_review') { /* Manual review cannot be cleared by another automatic delivery. */ }
+      else if (event.paymentStatus === 'no_payment_required' && event.sessionStatus === 'complete') { status = 'needs_review'; reason = 'Checkout completed without the required package payment.'; }
+      else if (paid && successEvidence) {
+        if (status === 'expired' || status === 'cancelled') { status = 'needs_review'; reason = 'Payment arrived after the reservation was released. Staff must review availability.'; }
+        else status = 'confirmed';
+      } else if (status !== 'confirmed') {
+        if (event.sessionStatus === 'expired' && event.paymentStatus !== 'paid' && ['checkout.session.expired', 'reconcile'].includes(event.type)) status = 'expired';
+        else if (event.type === 'checkout.session.async_payment_failed' && event.sessionStatus === 'complete' && event.paymentStatus !== 'paid') status = 'cancelled';
+        else if (['checkout.session.completed', 'reconcile'].includes(event.type) && event.sessionStatus === 'complete' && event.paymentStatus === 'unpaid' && !['expired', 'cancelled'].includes(status)) status = 'awaiting_payment';
+      }
+      // Verified webhook metadata identifies the booking even if Stripe delivered before our create response.
+      const { rows } = await tx.query('UPDATE igloo_bookings SET status=$2,review_reason=$3,session_id=COALESCE(session_id,$4),updated_at=now() WHERE id=$1 RETURNING *', [event.bookingId, status, reason, mismatch ? null : event.sessionId]);
+      await tx.query('INSERT INTO igloo_payment_events (event_id,booking_id,session_id) VALUES ($1,$2,$3)', [event.eventId, event.bookingId, event.sessionId]);
+      if (status === 'confirmed' && row.status !== 'confirmed') await tx.query('INSERT INTO igloo_outbox (id,booking_id) VALUES ($1,$2) ON CONFLICT (booking_id) DO NOTHING', [randomUUID(), event.bookingId]);
+      return mapBooking(rows[0]);
+    });
+  }
+
+  async pendingCheckouts(limit = 100): Promise<Booking[]> {
+    const { rows } = await this.db.query("SELECT * FROM igloo_bookings WHERE status IN ('held','awaiting_payment') ORDER BY updated_at,created_at,id LIMIT $1", [Math.min(500, Math.max(1, limit))]);
+    return rows.map(mapBooking);
+  }
+
+  async listBookings(limit = 200): Promise<Booking[]> {
+    const { rows } = await this.db.query('SELECT * FROM igloo_bookings ORDER BY created_at DESC LIMIT $1', [Math.min(1_000, Math.max(1, limit))]);
+    return rows.map(mapBooking);
+  }
+
+  async claimConfirmationEmails(limit = 20): Promise<OutboxItem[]> {
+    return this.db.transaction(async (tx) => {
+      const { rows } = await tx.query(`SELECT o.* FROM igloo_outbox o JOIN igloo_bookings b ON b.id=o.booking_id
+        WHERE b.status='confirmed' AND ((o.status IN ('pending','failed') AND o.next_attempt_at<=now()) OR (o.status='sending' AND o.lease_until<now()))
+        ORDER BY o.created_at LIMIT $1 FOR UPDATE OF o SKIP LOCKED`, [Math.min(100, Math.max(1, limit))]);
+      const output: OutboxItem[] = [];
+      for (const row of rows) {
+        const claimToken = randomUUID();
+        await tx.query("UPDATE igloo_outbox SET status='sending',claim_token=$2,lease_until=now()+interval '5 minutes',attempts=attempts+1 WHERE id=$1", [row.id, claimToken]);
+        const booking = (await tx.query("UPDATE igloo_bookings SET email_status='sending' WHERE id=$1 RETURNING *", [row.booking_id])).rows[0];
+        output.push({ id: String(row.id), claimToken, booking: mapBooking(booking), attempts: Number(row.attempts) + 1 });
+      }
+      return output;
+    });
+  }
+
+  async markEmailSent(id: string, claimToken: string, providerId?: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const { rows } = await tx.query("UPDATE igloo_outbox SET status='sent',sent_at=now(),provider_id=$3,lease_until=NULL WHERE id=$1 AND claim_token=$2 AND status='sending' RETURNING booking_id", [id, claimToken, providerId ?? null]);
+      if (rows[0]) await tx.query("UPDATE igloo_bookings SET email_status='sent' WHERE id=$1", [rows[0].booking_id]);
+    });
+  }
+
+  async markEmailFailed(id: string, claimToken: string, error: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const { rows } = await tx.query("UPDATE igloo_outbox SET status='failed',last_error=$3,lease_until=NULL,next_attempt_at=now()+interval '5 minutes' WHERE id=$1 AND claim_token=$2 AND status='sending' RETURNING booking_id", [id, claimToken, error.slice(0, 500)]);
+      if (rows[0]) await tx.query("UPDATE igloo_bookings SET email_status='failed' WHERE id=$1", [rows[0].booking_id]);
+    });
+  }
+}

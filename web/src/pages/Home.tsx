@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Accordion } from '../components/Accordion'
 import { faqPreview } from '../content/faq'
+import { iglooEvent } from '../content/igloo-event'
 import { services } from '../content/services'
 import { site } from '../content/site'
 
@@ -64,6 +65,26 @@ export function Home() {
               Explore Services
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* Seasonal events */}
+      <section className="border-b border-gold/30 bg-ivory-warm px-5 py-10 md:px-8 lg:px-12">
+        <div className="container-site flex flex-col items-start justify-between gap-6 md:flex-row md:items-center md:gap-10">
+          <div className="max-w-2xl">
+            <p className="section-label">October 23, 24, 30 & 31 · Clyde, NY</p>
+            <h2 className="mt-2 font-display text-3xl font-semibold text-navy md:text-4xl">
+              Sodus Street Studio Under the Stars.
+            </h2>
+            <p className="mt-3 leading-relaxed text-navy-muted">
+              Your own igloo for up to {iglooEvent.maxGuests} guests, {iglooEvent.durationMinutes} minutes together,
+              and a platter to share. ${iglooEvent.priceCents / 100} per igloo, plus applicable tax.
+            </p>
+            <Link to="/igloos#igloo-video" className="mt-4 inline-block text-sm font-semibold text-navy underline decoration-gold underline-offset-4 hover:text-gold-dark">Watch the Ride to Clyde video →</Link>
+          </div>
+          <Link to="/igloos" className="btn-outline shrink-0">
+            Explore Igloo Events
+          </Link>
         </div>
       </section>
 

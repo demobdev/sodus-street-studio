@@ -20,7 +20,7 @@ export function Header() {
           />
         </Link>
 
-        <nav className="hidden items-center gap-6 lg:flex">
+        <nav className="hidden items-center gap-5 xl:flex">
           {site.nav.map((item) => (
             <NavLink
               key={item.href}
@@ -42,7 +42,7 @@ export function Header() {
           </Link>
           <button
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center border border-navy/20 text-navy lg:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center border border-navy/20 text-navy xl:hidden"
             aria-label="Toggle menu"
             aria-expanded={open}
             onClick={() => setOpen((value) => !value)}
@@ -58,7 +58,7 @@ export function Header() {
       </div>
 
       {open ? (
-        <div className="border-t border-navy/10 bg-ivory px-5 py-4 lg:hidden">
+        <div className="border-t border-navy/10 bg-ivory px-5 py-4 xl:hidden">
           <nav className="flex flex-col gap-3">
             {site.nav.map((item) => (
               <NavLink

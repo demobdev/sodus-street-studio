@@ -52,6 +52,7 @@ export function Footer() {
             Booking
           </h3>
           <ul className="space-y-2 text-sm text-ivory/80">
+            <li><Link to="/igloos" className="hover:text-gold">Igloo Events</Link></li>
             <li><Link to="/booking" className="hover:text-gold">Book a Session</Link></li>
             <li><Link to="/booking#rates" className="hover:text-gold">Rates</Link></li>
             <li><Link to="/booking#policies" className="hover:text-gold">Cancellation Policy</Link></li>

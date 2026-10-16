@@ -6,6 +6,7 @@ Customer reservations remain closed. The production payment connection is being 
 
 - Stripe business: Sodus Street Studio, LLC, `acct_1UQXvGGVrEBb1o4U`. Account Status showed no active tasks. API checks confirmed `charges_enabled` and `payouts_enabled` true. This supersedes the October 15 missing-bank task; no bank details were copied or changed.
 - Restricted live key named **Sodus igloo booking — production**, created with Demo's explicit approval and Stripe email/SMS verification. Permissions: Accounts read, Checkout Sessions write, Tax Rates read. Stored as a sensitive, production-only Vercel variable. Temporary local transfer file and clipboard copy were removed. No refund/payout permissions.
+- Live webhook **Sodus igloo booking — production**, `we_1UREQKGVrEBb1o4UXqs90Qge`, is active at `https://sodus-street-studio.vercel.app/api/igloo/webhook` for the four Checkout Session events. Demo approved the connection. Its signing secret is stored as a sensitive production-only Vercel variable; temporary transfer file removed.
 - Separate Neon production database: `sodus-igloo-production`, project `shiny-cell-17409257`, database `sodus`, PostgreSQL 17 in AWS US East. Schema applied; zero bookings and no test reservations copied.
 - Four draft platter packages, $225 base price, eight guests, 90 minutes. Twelve closed seating slots across October 23, 24, 30 and 31 at 5, 7 and 9 p.m. Eastern. Each slot has four igloos shared across all platter choices.
 - Vercel production database connection, booking token secret, scheduled-job secret, account ID and staff allowlist configured. Allowlist: Demo and Maát. Reply-To: `maat@onthemovecs.com`.
@@ -36,7 +37,7 @@ Once enabled, paid igloo reservations are stored in the production booking datab
 
 ## Remaining technical launch checks
 
-- The Stripe event destination is prepared in the browser with the four Checkout Session events and production endpoint. Its creation/signing secret remain pending Demo's action-time approval; it has not been created.
+- The webhook connection and signing-secret checks are complete. Actual Stripe-origin payment delivery is still to be verified during the payment smoke test; the readiness probe below does not replace that test.
 - Verify the Sodus sender domain, configure a sending credential, and test actual guest and staff-login email delivery.
 - Install the approved tax rate and final policy text, then validate payment success, decline, expiry, duplicate events and confirmation delivery in a separate test environment.
 - Perform an owner-controlled live payment/refund smoke check when the owner is ready; no live payment has been initiated in this task.
@@ -47,10 +48,11 @@ The stable booking URL is `https://sodus-street-studio.vercel.app/igloos`. A cus
 ## Released and verified
 
 - Code commit: `7514e92`, pushed to `origin/main`.
-- Vercel production deployment: `dpl_3DcyGNaeyK2FXvEZKNLFhaRKcEfB`, promoted to the stable domain. Source URL: `https://sodus-street-studio-lc95w4n8a-demo-wvfm-labs-projects.vercel.app`.
+- Final Vercel production deployment, including the webhook secret: `dpl_5wNUaQMSmB98tGXEfgFZPyTdBUMP`, promoted to the stable domain. Source URL: `https://sodus-street-studio-jte5m6wk2-demo-wvfm-labs-projects.vercel.app`.
 - Server suite: 53 passing; the normally skipped native PostgreSQL concurrency test was run separately against the development database and passed. TypeScript, frontend build and lint passed.
 - Public production API: catalog reports live configuration with `bookingOpen:false`; checkout returns 503 `NOT_CONFIGURED`; unauthenticated admin and jobs return 401; local payment simulator returns 404.
 - Authenticated production maintenance job returned 200 with zero failures and no bookings processed. The separate production database contains four draft packages, twelve closed slots and zero reservations.
 - Browser verified the released event page shows inquiry-only messaging, $225 plus applicable tax, eight guests, 90 minutes, four dates and four platter choices.
 - Initial staging deployment rejected a scheduler secret containing trailing whitespace. Credentials were transferred through the structured environment API without whitespace, temporary files removed, and the successful deployment validated afterward.
 - No live charge, real reservation, outgoing customer confirmation, or external test inquiry was initiated.
+- A locally signed non-booking readiness event sent to the public webhook returned 200; an invalid signature returned 400. This checked the deployed signing secret, raw-body handling and live account guard without creating a reservation. The Stripe dashboard still reports zero Stripe-origin deliveries. Production counts afterward: zero bookings, zero outbox emails, zero booking payment events.

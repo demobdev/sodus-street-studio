@@ -83,6 +83,44 @@ export function Igloos() {
         </div>
       </section>
 
+      <section className="section-pad border-b border-navy/10 bg-ivory-warm" aria-labelledby="igloo-photos-title">
+        <div className="container-site">
+          <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+            <h2 id="igloo-photos-title" className="display-title max-w-lg">A first look at the igloos.</h2>
+            <p className="max-w-md leading-relaxed text-navy-muted">
+              An early look at the space at Sodus Street Studio.
+              Furnishings and final table settings are being prepared.
+            </p>
+          </div>
+          <div className="mt-9 grid gap-6 md:grid-cols-2">
+            <figure>
+              <img
+                src="/images/igloos-evening.jpg"
+                alt="Clear igloos lit with warm string lights, with pumpkins and autumn flowers beside the entrances."
+                width={1536}
+                height={1152}
+                loading="lazy"
+                decoding="async"
+                className="block h-auto w-full"
+              />
+              <figcaption className="mt-3 text-sm text-navy-muted">The igloos after sunset.</figcaption>
+            </figure>
+            <figure>
+              <img
+                src="/images/igloo-entrance.jpg"
+                alt="An unfurnished igloo entrance framed by cornstalks, pumpkins, flowers and warm lights."
+                width={1536}
+                height={1152}
+                loading="lazy"
+                decoding="async"
+                className="block h-auto w-full"
+              />
+              <figcaption className="mt-3 text-sm text-navy-muted">A closer look at the autumn setting.</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
       <IglooPromoVideo />
 
       <section className="section-pad" aria-labelledby="igloo-dates-title">

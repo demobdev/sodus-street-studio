@@ -1,5 +1,7 @@
 # Sodus form delivery audit — October 16, 2026
 
+**October 17 live test:** The igloo form returned **Activation required**, and FormSubmit reported sending an activation email to Maát. Inquiry delivery is not confirmed. See [the test record and next steps](LAUNCH-CHECK-AND-MAAT-DRAFT-2026-10-17.md). Other form rows below describe implementation, not independently completed delivery tests.
+
 This records the implementation at the start of production-readiness work. No test submission, email, or live payment was sent during this audit. Later server/email changes should update the relevant rows before launch.
 
 | Form | Destination and behavior | Storage / delivery evidence |

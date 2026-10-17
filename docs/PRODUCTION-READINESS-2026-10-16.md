@@ -1,5 +1,7 @@
 # Sodus igloo production readiness — October 16, 2026
 
+**October 17 update:** See [the latest launch check](LAUNCH-CHECK-AND-MAAT-DRAFT-2026-10-17.md). A live inquiry test found FormSubmit activation is required; Maát's Hightail files were located; cancellation/refund operations need additional work before paid bookings open. Historical claims below about no test inquiry and missing photos are superseded by that update.
+
 Customer reservations remain closed. The production payment connection is being prepared; deployment alone is not a launch approval or proof of a completed payment.
 
 ## Completed infrastructure

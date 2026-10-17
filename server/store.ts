@@ -38,6 +38,10 @@ export interface PaymentEvidence {
 }
 export interface OutboxItem { id: string; claimToken: string; booking: Booking; attempts: number }
 export interface CheckoutTax { rateId: string; percentage: number; taxCents: number }
+export interface CancellationRequest {
+  id: string; reason: string; requestedBy: string; requestedAt: string;
+}
+export type ManagedBooking = Booking & { cancellationRequest: CancellationRequest | null };
 export class StoreError extends Error {
   constructor(message: string, public status: number, public code: string) { super(message); this.name = 'StoreError'; }
 }
@@ -284,6 +288,47 @@ export class IglooStore {
   async listBookings(limit = 200): Promise<Booking[]> {
     const { rows } = await this.db.query('SELECT * FROM igloo_bookings ORDER BY created_at DESC LIMIT $1', [Math.min(1_000, Math.max(1, limit))]);
     return rows.map(mapBooking);
+  }
+
+  async listManagedBookings(limit = 200): Promise<ManagedBooking[]> {
+    const { rows } = await this.db.query(`SELECT b.*, r.id AS cancellation_id, r.reason AS cancellation_reason,
+      r.requested_by, r.requested_at FROM igloo_bookings b
+      LEFT JOIN igloo_cancellation_requests r ON r.booking_id=b.id AND r.withdrawn_at IS NULL
+      ORDER BY (r.id IS NOT NULL) DESC, b.created_at DESC, b.id LIMIT $1`, [Math.min(1_000, Math.max(1, limit))]);
+    return rows.map(row => ({ ...mapBooking(row), cancellationRequest: row.cancellation_id == null ? null : {
+      id: String(row.cancellation_id), reason: String(row.cancellation_reason),
+      requestedBy: String(row.requested_by), requestedAt: iso(row.requested_at),
+    } }));
+  }
+
+  // Staff review only: payment state, reserved capacity and guest messaging stay unchanged.
+  async requestCancellation(bookingId: string, reason: string, actor: string): Promise<void> {
+    requireUuid(bookingId, 'Booking id');
+    if (typeof reason !== 'string' || !reason.trim() || reason.trim().length > 1_000) throw badInput('Provide a cancellation reason of 1–1000 characters.');
+    if (!actor?.trim()) throw badInput('A staff identity is required.');
+    return this.db.transaction(async tx => {
+      const booking = await lockedBooking(tx, bookingId);
+      if (booking.status !== 'confirmed') throw new StoreError('Only confirmed reservations can be flagged for cancellation review.', 409, 'BOOKING_NOT_CONFIRMED');
+      const current = (await tx.query('SELECT * FROM igloo_cancellation_requests WHERE booking_id=$1 AND withdrawn_at IS NULL', [bookingId])).rows[0];
+      if (current) {
+        if (current.reason === reason.trim()) return;
+        throw new StoreError('This booking already has a cancellation request. Refresh to review it before making changes.', 409, 'CANCELLATION_EXISTS');
+      }
+      await tx.query('INSERT INTO igloo_cancellation_requests (id,booking_id,reason,requested_by) VALUES ($1,$2,$3,$4)', [randomUUID(), bookingId, reason.trim(), actor]);
+    });
+  }
+
+  async withdrawCancellation(bookingId: string, requestId: string, actor: string): Promise<void> {
+    requireUuid(bookingId, 'Booking id'); requireUuid(requestId, 'Cancellation request id');
+    if (!actor?.trim()) throw badInput('A staff identity is required.');
+    return this.db.transaction(async tx => {
+      await lockedBooking(tx, bookingId);
+      const previous = (await tx.query('SELECT * FROM igloo_cancellation_requests WHERE id=$1 AND booking_id=$2', [requestId, bookingId])).rows[0];
+      if (!previous) throw new StoreError('Cancellation request not found. Refresh the dashboard.', 404, 'NOT_FOUND');
+      // A retry for a withdrawn request must never clear a newer request for the same booking.
+      if (previous.withdrawn_at != null) return;
+      await tx.query('UPDATE igloo_cancellation_requests SET withdrawn_by=$2,withdrawn_at=now() WHERE id=$1', [requestId, actor]);
+    });
   }
 
   async claimConfirmationEmails(limit = 20): Promise<OutboxItem[]> {

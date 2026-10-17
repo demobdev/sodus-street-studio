@@ -53,6 +53,12 @@ export type AdminBooking = Omit<IglooBooking, 'mode' | 'checkoutUrl'> & {
   email: string
   phone: string
   createdAt: string
+  cancellationRequest: {
+    id: string
+    reason: string
+    requestedBy: string
+    requestedAt: string
+  } | null
 }
 
 export type IglooAdminData = {

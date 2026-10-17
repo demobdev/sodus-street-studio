@@ -53,6 +53,18 @@ ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS tax_percentage numeric(7,4) 
 ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS tax_cents integer NOT NULL DEFAULT 0 CHECK (tax_cents >= 0);
 ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS total_cents integer CHECK (total_cents = amount_cents + tax_cents);
 CREATE INDEX IF NOT EXISTS igloo_bookings_slot_status ON igloo_bookings(slot_id, status);
+CREATE TABLE IF NOT EXISTS igloo_cancellation_requests (
+  id uuid PRIMARY KEY,
+  booking_id uuid NOT NULL REFERENCES igloo_bookings(id),
+  reason text NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 1000),
+  requested_by text NOT NULL,
+  requested_at timestamptz NOT NULL DEFAULT now(),
+  withdrawn_by text,
+  withdrawn_at timestamptz,
+  CHECK ((withdrawn_by IS NULL) = (withdrawn_at IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS igloo_cancellation_requests_active
+  ON igloo_cancellation_requests(booking_id) WHERE withdrawn_at IS NULL;
 CREATE TABLE IF NOT EXISTS igloo_payment_events (
   event_id text PRIMARY KEY,
   booking_id uuid NOT NULL REFERENCES igloo_bookings(id),

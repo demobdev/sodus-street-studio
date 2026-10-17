@@ -119,16 +119,25 @@ export function createApp(c: Config, existingDb?: Database) {
         return reply(200,{ok:true});
       }
       if (route.startsWith('/admin')) {
-        const session = cookie(req); if (!await auth.sessionEmail(session)) throw new StoreError('Please sign in to manage bookings.',401,'UNAUTHORIZED');
+        const session = cookie(req); const staffEmail = await auth.sessionEmail(session);
+        if (!staffEmail) throw new StoreError('Please sign in to manage bookings.',401,'UNAUTHORIZED');
         if (route === '/admin/logout' && method === 'POST') {
           await auth.logout(session); res.setHeader('Set-Cookie',`${cookieName}=; Path=/api/igloo; HttpOnly; SameSite=Strict; Max-Age=0${c.local?'':'; Secure'}`); return reply(200,{ok:true});
         }
         if (route === '/admin' && method === 'GET') {
-          const bookings = (await store.listBookings()).map(({id,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,taxCents,totalCents,currency,emailStatus,createdAt})=>({id,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,taxCents,totalCents,currency,emailStatus,createdAt}));
+          const bookings = (await store.listManagedBookings()).map(({id,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,taxCents,totalCents,currency,emailStatus,createdAt,cancellationRequest})=>({id,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,taxCents,totalCents,currency,emailStatus,createdAt,cancellationRequest}));
           return reply(200,{mode:c.mode,readiness:[...missing,...c.mock?['Local simulation: no Stripe payment or email is sent.']:[]],packages:await store.listPackages(true),slots:await store.listSlots(true),bookings});
         }
         if (route === '/admin/package' && method === 'POST') { await store.savePackage(body as unknown as PackageInput); return reply(200,{ok:true}); }
         if (route === '/admin/slot' && method === 'POST') { await store.saveSlot(body as unknown as SlotInput); return reply(200,{ok:true}); }
+        if (route === '/admin/cancellation-request' && method === 'POST') {
+          if (typeof body.bookingId !== 'string' || typeof body.reason !== 'string') throw new StoreError('Provide a booking and cancellation reason.',400,'INVALID_INPUT');
+          await store.requestCancellation(body.bookingId,body.reason,staffEmail); return reply(200,{ok:true});
+        }
+        if (route === '/admin/cancellation-withdraw' && method === 'POST') {
+          if (typeof body.bookingId !== 'string' || typeof body.requestId !== 'string') throw new StoreError('Provide a booking and cancellation request.',400,'INVALID_INPUT');
+          await store.withdrawCancellation(body.bookingId,body.requestId,staffEmail); return reply(200,{ok:true});
+        }
         if (route === '/admin/reconcile' && method === 'POST') {
           await rate(`reconcile:${ip}`,5,60);
           for (const b of await store.pendingCheckouts(1)) {

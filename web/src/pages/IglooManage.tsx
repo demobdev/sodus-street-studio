@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { IglooPackageEditor, IglooSlotEditor } from '../components/IglooAdminForms'
 import { IglooApiError, errorMessage, eventDate, eventTime, iglooApi, isLocalBookingHost, money } from '../lib/igloo'
-import type { IglooAdminData, IglooPackage, IglooSlot } from '../lib/igloo'
+import type { AdminBooking, IglooAdminData, IglooPackage, IglooSlot } from '../lib/igloo'
 
 function loginToken() {
   return new URLSearchParams(window.location.hash.slice(1)).get('login') || ''
@@ -15,6 +15,57 @@ function safeLocalLogin(value?: string) {
     const url = new URL(value, window.location.origin)
     return url.origin === window.location.origin && url.pathname === '/igloos/manage' ? url.href : null
   } catch { return null }
+}
+
+function CancellationReviewForm({ booking, requestId, onSave, onCancel }: {
+  booking: AdminBooking
+  requestId: string | null
+  onSave: (reason: string) => Promise<void>
+  onCancel: () => void
+}) {
+  const [reason, setReason] = useState('')
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const heading = useRef<HTMLHeadingElement>(null)
+  const withdrawing = requestId !== null
+  const changed = withdrawing
+    ? booking.cancellationRequest?.id !== requestId
+    : booking.status !== 'confirmed' || !!booking.cancellationRequest
+
+  useEffect(() => { heading.current?.focus() }, [])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (saving || changed || !acknowledged) return
+    if (!withdrawing && !reason.trim()) { setError('Enter a reason for the cancellation review.'); return }
+    setSaving(true); setError('')
+    try { await onSave(reason.trim()) }
+    catch (cause) { setError(errorMessage(cause)) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <form onSubmit={submit} aria-labelledby="cancellation-review-title" className="mt-6 border border-gold bg-white p-5 sm:p-8">
+      <h2 id="cancellation-review-title" ref={heading} tabIndex={-1} className="font-display text-3xl">{withdrawing ? 'Withdraw cancellation review' : 'Request cancellation review'}</h2>
+      <p className="mt-3 font-semibold">{booking.reference} · {booking.name}</p>
+      <p className="mt-1 text-sm text-navy-muted">{booking.packageName} · {eventDate(booking.startsAt)} at {eventTime(booking.startsAt)}</p>
+      {changed ? <p role="alert" className="mt-5 text-sm text-red-800">This booking changed since you opened the form. Close this form and review its current status before continuing.</p> : (
+        <>
+          <p id="cancellation-review-explanation" className="mt-5 border-l-2 border-gold bg-ivory-warm p-4 text-sm leading-relaxed">{withdrawing ? 'This removes the review flag only. The reservation keeps its current status and the igloo stays reserved. No payment changes or guest notification will be made.' : 'This flags the booking for staff review only. It does not cancel the reservation, issue a refund, release the igloo, or notify the guest. The reservation stays confirmed until the studio resolves it.'}</p>
+          <fieldset disabled={saving} className="mt-5 space-y-5">
+            <legend className="sr-only">Cancellation review details</legend>
+            {withdrawing ? <div className="text-sm"><p className="font-semibold">Reason for the existing review</p><p className="mt-2 whitespace-pre-wrap break-words text-navy-muted">{booking.cancellationRequest?.reason}</p></div> : (
+              <label className="block text-sm"><span className="mb-1.5 block font-medium">Reason for review</span><textarea name="reason" value={reason} onChange={event => setReason(event.target.value)} required maxLength={1000} rows={3} aria-describedby="cancellation-reason-help" className="input-field" /><span id="cancellation-reason-help" className="mt-2 block text-xs text-navy-muted">Include the guest’s request and any details the studio needs. {reason.length}/1,000 characters.</span></label>
+            )}
+            <label className="flex items-start gap-3 text-sm leading-relaxed"><input type="checkbox" required checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} aria-describedby="cancellation-review-explanation" className="mt-1 size-4 shrink-0 accent-navy" /><span>{withdrawing ? 'I want to remove this review flag. The booking and payment will remain unchanged.' : 'I understand this is a review request only. The booking and payment will remain unchanged.'}</span></label>
+          </fieldset>
+        </>
+      )}
+      {error ? <p role="alert" className="mt-4 text-sm text-red-800">{error}</p> : null}
+      <div className="mt-6 flex flex-wrap gap-3"><button type="submit" disabled={saving || changed || !acknowledged || (!withdrawing && !reason.trim())} className="btn-primary disabled:opacity-60">{saving ? 'Saving…' : withdrawing ? 'Withdraw Review Request' : 'Save Review Request'}</button><button type="button" disabled={saving} onClick={onCancel} className="btn-outline disabled:opacity-60">Close</button></div>
+    </form>
+  )
 }
 
 export default function IglooManage() {
@@ -29,6 +80,7 @@ export default function IglooManage() {
   const [packageEditor, setPackageEditor] = useState<IglooPackage | 'new' | null>(null)
   const [slotEditor, setSlotEditor] = useState<IglooSlot | 'new' | null>(null)
   const [search, setSearch] = useState('')
+  const [cancellationEditor, setCancellationEditor] = useState<{ bookingId: string; requestId: string | null } | null>(null)
   const initialRequest = useRef<Promise<IglooAdminData> | null>(null)
 
   useEffect(() => {
@@ -72,6 +124,22 @@ export default function IglooManage() {
   }
 
   const bookings = data?.bookings.filter(booking => `${booking.reference} ${booking.name} ${booking.email} ${booking.status}`.toLowerCase().includes(search.trim().toLowerCase())) || []
+  const pendingReviews = data?.bookings.filter(booking => booking.cancellationRequest) || []
+  const reviewBooking = data?.bookings.find(booking => booking.id === cancellationEditor?.bookingId)
+
+  async function saveCancellationReview(reason: string) {
+    if (!cancellationEditor) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const { bookingId, requestId } = cancellationEditor
+      await iglooApi(requestId ? '/admin/cancellation-withdraw' : '/admin/cancellation-request', {
+        body: requestId ? { bookingId, requestId } : { bookingId, reason },
+      })
+      setCancellationEditor(null)
+      setNotice(requestId ? 'Review request withdrawn. The booking and payment are unchanged.' : 'Cancellation review requested. The igloo remains reserved. No refund or guest email was sent.')
+      await refresh().catch(cause => setError(`Saved, but the list could not refresh: ${errorMessage(cause)}`))
+    } finally { setBusy(false) }
+  }
 
   return (
     <section className="section-pad">
@@ -91,15 +159,44 @@ export default function IglooManage() {
             {data.mode === 'test' ? <div role="note" className="mt-8 border border-gold bg-ivory-warm px-5 py-4 text-sm"><strong>Test mode.</strong> These are test bookings. Editing this dashboard does not enable live payments.</div> : null}
             {data.readiness.length ? <details className="mt-5 border border-navy/15 bg-white p-5" open><summary className="cursor-pointer font-semibold">Setup status</summary><ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-navy-muted">{data.readiness.map(item => <li key={item}>{item}</li>)}</ul></details> : null}
             <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-b border-navy/15 pb-5">
-              <div className="flex flex-wrap gap-2" aria-label="Booking management views">{(['bookings', 'packages', 'times'] as const).map(item => <button key={item} type="button" aria-pressed={view === item} onClick={() => setView(item)} className={`px-4 py-3 text-sm font-semibold transition ${view === item ? 'bg-navy text-ivory' : 'border border-navy/15 hover:border-gold'}`}>{item === 'bookings' ? 'Reservations' : item === 'packages' ? 'Packages' : 'Event Times'}</button>)}</div>
+              <div className="flex flex-wrap gap-2" aria-label="Booking management views">{(['bookings', 'packages', 'times'] as const).map(item => <button key={item} type="button" disabled={busy} aria-pressed={view === item} onClick={() => setView(item)} className={`px-4 py-3 text-sm font-semibold transition ${view === item ? 'bg-navy text-ivory' : 'border border-navy/15 hover:border-gold'}`}>{item === 'bookings' ? 'Reservations' : item === 'packages' ? 'Packages' : 'Event Times'}</button>)}</div>
               <div className="flex flex-wrap gap-4 text-sm"><button type="button" disabled={busy} className="font-semibold underline decoration-gold underline-offset-4 disabled:opacity-50" onClick={() => { void action(refresh, 'Booking data refreshed.') }}>Refresh</button><button type="button" disabled={busy} className="font-semibold underline decoration-gold underline-offset-4 disabled:opacity-50" onClick={() => { void action(async () => { await iglooApi('/admin/logout', { body: {} }); setData(null); setLocalLogin(null) }, 'You’re signed out.') }}>Sign Out</button></div>
             </div>
 
             {view === 'bookings' ? (
               <div className="mt-7">
                 <div className="flex flex-wrap items-end justify-between gap-5"><label className="block w-full text-sm sm:max-w-sm"><span className="mb-1.5 block font-medium">Find a booking</span><input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name, email, reference, or status" className="input-field" /></label><button type="button" disabled={busy} className="btn-outline disabled:opacity-60" onClick={() => { void action(async () => { await iglooApi('/admin/reconcile', { body: {} }); await refresh() }, 'Payment statuses checked and pending confirmation emails retried.') }}>{busy ? 'Working…' : 'Check Payments & Retry Emails'}</button></div>
-                <p className="mt-4 text-sm text-navy-muted">Confirmed bookings are read-only here. Handle any refund or cancellation with the studio through Stripe.</p>
-                <div className="mt-5 overflow-x-auto border border-navy/15"><table className="w-full min-w-[850px] text-left text-sm"><caption className="sr-only">Igloo reservations</caption><thead className="bg-navy text-ivory"><tr>{['Reference', 'Guest', 'Evening', 'Amount', 'Status'].map(label => <th key={label} scope="col" className="px-4 py-3 font-semibold">{label}</th>)}</tr></thead><tbody>{bookings.map(booking => <tr key={booking.id} className="border-t border-navy/10 align-top even:bg-white"><td className="px-4 py-4"><span className="font-semibold">{booking.reference}</span><span className="mt-1 block text-xs text-navy-muted">{booking.packageName}</span></td><td className="px-4 py-4"><span className="font-semibold">{booking.name}</span><span className="mt-1 block break-all">{booking.email}</span>{booking.phone ? <span className="mt-1 block">{booking.phone}</span> : null}<span className="mt-1 block text-xs text-navy-muted">{booking.guests} guests · One igloo</span></td><td className="px-4 py-4">{eventDate(booking.startsAt)}<span className="mt-1 block text-xs text-navy-muted">{eventTime(booking.startsAt)} – {eventTime(booking.endsAt)}</span></td><td className="px-4 py-4"><span className="font-semibold">{money(booking.totalCents ?? booking.amountCents, booking.currency)}</span><span className="mt-1 block text-xs text-navy-muted">Subtotal: {money(booking.amountCents, booking.currency)}</span><span className="mt-1 block text-xs text-navy-muted">Tax: {money(booking.taxCents ?? 0, booking.currency)}</span></td><td className="px-4 py-4"><span className={`font-semibold ${booking.status === 'needs_review' ? 'text-red-800' : ''}`}>{booking.status.replaceAll('_', ' ')}</span><span className="mt-1 block text-xs text-navy-muted">Email: {booking.emailStatus.replaceAll('_', ' ')}</span></td></tr>)}{!bookings.length ? <tr><td colSpan={5} className="px-5 py-10 text-center text-navy-muted">{search ? 'No matching reservations.' : 'No reservations yet.'}</td></tr> : null}</tbody></table></div>
+                <p className="mt-4 text-sm text-navy-muted">Flag a confirmed reservation for cancellation review below. Reviews keep the igloo reserved; they do not issue refunds or send guest emails.</p>
+                {pendingReviews.length ? (
+                  <section aria-labelledby="pending-cancellations-title" className="mt-6 border border-gold bg-ivory-warm p-5">
+                    <h2 id="pending-cancellations-title" className="font-display text-2xl">Cancellation reviews · {pendingReviews.length}</h2>
+                    <p className="mt-2 text-sm text-navy-muted">These reservations still occupy their igloos. Review the policy and payment before arranging a cancellation with the guest.</p>
+                    <ul className="mt-4 divide-y divide-navy/15">{pendingReviews.map(booking => {
+                      const request = booking.cancellationRequest!
+                      return <li key={request.id} className="py-4 first:pt-0 last:pb-0">
+                        <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
+                          <div className="min-w-0 flex-1"><h3 className="font-semibold">{booking.reference} · {booking.name}</h3><p className="mt-1 text-sm">{eventDate(booking.startsAt)} at {eventTime(booking.startsAt)}</p><p className="mt-3 whitespace-pre-wrap break-words text-sm">{request.reason}</p><p className="mt-2 break-words text-xs text-navy-muted">Requested by {request.requestedBy} · {eventDate(request.requestedAt)} at {eventTime(request.requestedAt)}</p></div>
+                          <button type="button" disabled={busy} onClick={() => setCancellationEditor({ bookingId: booking.id, requestId: request.id })} className="btn-outline shrink-0 disabled:opacity-60" aria-label={`Withdraw cancellation review for ${booking.reference}`}>Withdraw Review</button>
+                        </div>
+                      </li>
+                    })}</ul>
+                  </section>
+                ) : null}
+                {cancellationEditor && reviewBooking ? <CancellationReviewForm key={`${cancellationEditor.bookingId}/${cancellationEditor.requestId || 'new'}`} booking={reviewBooking} requestId={cancellationEditor.requestId} onSave={saveCancellationReview} onCancel={() => setCancellationEditor(null)} /> : null}
+                <div className="mt-5 overflow-x-auto border border-navy/15">
+                  <table className="w-full min-w-[1000px] text-left text-sm">
+                    <caption className="sr-only">Igloo reservations</caption>
+                    <thead className="bg-navy text-ivory"><tr>{['Reference', 'Guest', 'Evening', 'Amount', 'Status', 'Review'].map(label => <th key={label} scope="col" className="px-4 py-3 font-semibold">{label}</th>)}</tr></thead>
+                    <tbody>{bookings.map(booking => <tr key={booking.id} className="border-t border-navy/10 align-top even:bg-white">
+                      <td className="px-4 py-4"><span className="font-semibold">{booking.reference}</span><span className="mt-1 block text-xs text-navy-muted">{booking.packageName}</span></td>
+                      <td className="px-4 py-4"><span className="font-semibold">{booking.name}</span><span className="mt-1 block break-all">{booking.email}</span>{booking.phone ? <span className="mt-1 block">{booking.phone}</span> : null}<span className="mt-1 block text-xs text-navy-muted">{booking.guests} guests · One igloo</span></td>
+                      <td className="px-4 py-4">{eventDate(booking.startsAt)}<span className="mt-1 block text-xs text-navy-muted">{eventTime(booking.startsAt)} – {eventTime(booking.endsAt)}</span></td>
+                      <td className="px-4 py-4"><span className="font-semibold">{money(booking.totalCents ?? booking.amountCents, booking.currency)}</span><span className="mt-1 block text-xs text-navy-muted">Subtotal: {money(booking.amountCents, booking.currency)}</span><span className="mt-1 block text-xs text-navy-muted">Tax: {money(booking.taxCents ?? 0, booking.currency)}</span></td>
+                      <td className="px-4 py-4"><span className={`font-semibold ${booking.status === 'needs_review' ? 'text-red-800' : ''}`}>{booking.status.replaceAll('_', ' ')}</span><span className="mt-1 block text-xs text-navy-muted">Email: {booking.emailStatus.replaceAll('_', ' ')}</span>{booking.cancellationRequest ? <span className="mt-2 inline-block border border-gold bg-ivory-warm px-2 py-1 text-xs font-semibold">Cancellation review pending</span> : null}</td>
+                      <td className="px-4 py-4">{booking.cancellationRequest ? <button type="button" disabled={busy} onClick={() => setCancellationEditor({ bookingId: booking.id, requestId: booking.cancellationRequest!.id })} className="font-semibold underline decoration-gold underline-offset-4 disabled:opacity-50" aria-label={`Review cancellation request for ${booking.reference}`}>Review Request</button> : booking.status === 'confirmed' ? <button type="button" disabled={busy} onClick={() => setCancellationEditor({ bookingId: booking.id, requestId: null })} className="font-semibold underline decoration-gold underline-offset-4 disabled:opacity-50" aria-label={`Request cancellation review for ${booking.reference}`}>Request Cancellation Review</button> : <span className="text-xs text-navy-muted">Available for confirmed bookings</span>}</td>
+                    </tr>)}{!bookings.length ? <tr><td colSpan={6} className="px-5 py-10 text-center text-navy-muted">{search ? 'No matching reservations.' : 'No reservations yet.'}</td></tr> : null}</tbody>
+                  </table>
+                </div>
               </div>
             ) : null}
 

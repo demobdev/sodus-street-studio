@@ -12,7 +12,7 @@ const config: Config = { local: true, mock: false, mode: 'test', liveAllowed: fa
   secret: 'jobs-fixture-booking-secret-longer-than-thirty-two', adminEmails: [], emailEnabled: true,
   emailKey: 'fixture-only', emailFrom: 'Fixture <no-reply@example.test>' };
 before(async () => { db = await createDatabase({ localPath: 'memory://' }); store = new IglooStore(db); await store.init(); });
-beforeEach(async () => { await db.query('TRUNCATE igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits'); });
+beforeEach(async () => { await db.query('TRUNCATE igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits'); });
 after(async () => { await db.close(); });
 
 async function fixture(capacity = 1) {

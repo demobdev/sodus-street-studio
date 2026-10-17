@@ -34,9 +34,16 @@ test('pooled PostgreSQL transactions serialize the final igloo and duplicate Che
     assert.ok(confirmations.every((entry) => entry.status === 'confirmed'));
     assert.equal((await db.query('SELECT * FROM igloo_outbox WHERE booking_id=$1', [booking.id])).rowCount, 1);
     assert.equal((await db.query('SELECT * FROM igloo_payment_events WHERE booking_id=$1', [booking.id])).rowCount, 1);
+    await Promise.all(Array.from({ length: 8 }, () => store.requestCancellation(booking.id, 'TEST ONLY cancellation review', 'test@example.test')));
+    const active = (await db.query('SELECT id FROM igloo_cancellation_requests WHERE booking_id=$1 AND withdrawn_at IS NULL', [booking.id])).rows;
+    assert.equal(active.length, 1);
+    await Promise.all([store.withdrawCancellation(booking.id, String(active[0]!.id), 'test@example.test'), store.applyStripeEvent({ ...event, eventId: `evt_native_${randomUUID()}` })]);
+    assert.equal((await store.getBooking(booking.id))?.status, 'confirmed');
+    assert.equal((await store.listSlots()).find(slot => slot.id === slotId)?.remaining, 0);
   } finally {
     // Delete only rows owned by this run, even if another development user has added data.
     await db.transaction(async (tx) => {
+      await tx.query('DELETE FROM igloo_cancellation_requests WHERE booking_id IN (SELECT id FROM igloo_bookings WHERE package_id=$1)', [packageId]);
       await tx.query('DELETE FROM igloo_outbox WHERE booking_id IN (SELECT id FROM igloo_bookings WHERE package_id=$1)', [packageId]);
       await tx.query('DELETE FROM igloo_payment_events WHERE booking_id IN (SELECT id FROM igloo_bookings WHERE package_id=$1)', [packageId]);
       await tx.query('DELETE FROM igloo_bookings WHERE package_id=$1', [packageId]);

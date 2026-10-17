@@ -23,7 +23,7 @@ before(async () => {
   await store.init();
 });
 beforeEach(async () => {
-  await db.query('TRUNCATE igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits');
+  await db.query('TRUNCATE igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits');
 });
 after(async () => {
   await Promise.all(servers.map((server) => new Promise<void>((resolve, reject) => {
@@ -155,6 +155,41 @@ test('booking status exposes the reserved subtotal, tax and total without leakin
   const data = await response.json() as Record<string, unknown>;
   assert.deepEqual([data.amountCents, data.taxCents, data.totalCents], [12345, 617, 12962]);
   for (const field of ['taxRateId', 'checkoutParams', 'email', 'name']) assert.equal(field in data, false);
+});
+
+test('cancellation review requires staff and trusted origin, records the session actor, and stays private', async () => {
+  const request = await start();
+  const { input } = await seed();
+  const checkout = await (await request('/checkout', { body: input })).json() as { bookingToken: string };
+  const booking = (await store.listBookings())[0]!;
+  await request('/simulate', { body: { outcome: 'paid' }, headers: { Authorization: `Bearer ${checkout.bookingToken}` } });
+  const body = { bookingId: booking.id, reason: 'Guest called about a weather concern.', actor: 'spoof@example.test' };
+  assert.equal((await request('/admin/cancellation-request', { body })).status, 401);
+  assert.equal((await request('/admin/cancellation-withdraw', { body: { bookingId: booking.id, requestId: randomUUID() } })).status, 401);
+
+  const login = await (await request('/admin/login', { body: { email: ADMIN } })).json() as { devLoginUrl: string };
+  const token = new URLSearchParams(new URL(login.devLoginUrl).hash.slice(1)).get('login');
+  const session = await request('/admin/session', { body: { token } });
+  const Cookie = session.headers.get('set-cookie')!.split(';')[0]!;
+  assert.equal((await request('/admin/cancellation-request', { body, headers: { Cookie, Origin: 'https://untrusted.example' } })).status, 403);
+  assert.equal((await request('/admin/cancellation-request', { body: { bookingId: booking.id, reason: {} }, headers: { Cookie } })).status, 400);
+  assert.equal((await request('/admin/cancellation-request', { body, headers: { Cookie } })).status, 200);
+  const dashboard = await (await request('/admin', { headers: { Cookie } })).json() as { bookings: { cancellationRequest: { id: string; reason: string; requestedBy: string } }[] };
+  const pending = dashboard.bookings[0]!.cancellationRequest;
+  assert.equal(pending.reason, body.reason);
+  assert.equal(pending.requestedBy, ADMIN);
+  const publicData = await (await request('/booking', { headers: { Authorization: `Bearer ${checkout.bookingToken}` } })).json() as Record<string, unknown>;
+  assert.equal(publicData.status, 'confirmed');
+  assert.equal('cancellationRequest' in publicData, false);
+  assert.equal(JSON.stringify(publicData).includes(body.reason), false);
+  assert.equal((await store.listSlots())[0]!.remaining, 0);
+  assert.equal((await db.query('SELECT id FROM igloo_outbox')).rows.length, 1, 'review does not queue another guest message');
+  const withdrawal = { bookingId: booking.id, requestId: pending.id };
+  assert.equal((await request('/admin/cancellation-withdraw', { body: withdrawal, headers: { Cookie, Origin: 'https://untrusted.example' } })).status, 403);
+  assert.equal((await request('/admin/cancellation-withdraw', { body: withdrawal, headers: { Cookie } })).status, 200);
+  assert.equal((await store.listManagedBookings())[0]!.cancellationRequest, null);
+  const audit = (await db.query('SELECT requested_by,withdrawn_by FROM igloo_cancellation_requests WHERE id=$1', [pending.id])).rows[0]!;
+  assert.deepEqual(audit, { requested_by: ADMIN, withdrawn_by: ADMIN });
 });
 
 test('scheduled jobs require an exact configured bearer token before any database initialization', async () => {

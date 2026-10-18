@@ -4,5 +4,5 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  server: { proxy: { '/api/igloo': 'http://127.0.0.1:4317' } },
+  server: { proxy: { '/api/igloo': process.env.IGLOO_API_PROXY || 'http://127.0.0.1:4317' } },
 })

@@ -25,7 +25,12 @@ async function rawBody(req: IncomingMessage): Promise<Buffer> {
   for await (const chunk of req) { const part = Buffer.from(chunk); size += part.length; if (size > 65_536) throw new StoreError('Request is too large.', 413, 'TOO_LARGE'); chunks.push(part); }
   return Buffer.concat(chunks);
 }
-export function createApp(c: Config, existingDb?: Database) {
+export interface AppOptions {
+  /** Optional closed-test scope, enforced for every checkout before contacting Stripe. */
+  checkoutRestriction?: { email: string; packageId: string; slotId: string };
+}
+export function createApp(c: Config, existingDb?: Database, options: AppOptions = {}) {
+  const checkoutRestriction = options.checkoutRestriction ? { ...options.checkoutRestriction } : null;
   let initialized: Promise<{ store: IglooStore; auth: AdminAuth; payments: Payments; refunds: Refunds }> | undefined;
   const initialize = () => initialized ??= (async () => {
     const db = existingDb || await createDatabase(c.mock ? { localPath: './.data/igloo-local' } : { connectionString: c.databaseUrl });
@@ -78,6 +83,10 @@ export function createApp(c: Config, existingDb?: Database) {
         await rate(`checkout:${ip}`,20,3600);
         const {packageId,slotId,name,email,phone,guests,policyAccepted,requestId} = body;
         if ([packageId,slotId,name,email,requestId].some(x=>typeof x !== 'string') || (phone !== undefined && typeof phone !== 'string') || typeof guests !== 'number') throw new StoreError('Please check your booking details.',400,'INVALID_INPUT');
+        if (checkoutRestriction && (String(email).trim().toLowerCase() !== checkoutRestriction.email ||
+          String(packageId).toLowerCase() !== checkoutRestriction.packageId || String(slotId).toLowerCase() !== checkoutRestriction.slotId)) {
+          throw new StoreError('This test checkout is limited to its prepared recipient, package and seating.',403,'CHECKOUT_SCOPE');
+        }
         await payments.verifyAccount();
         const held = await store.createHold({packageId,slotId,name,email,phone,guests,policyAccepted,requestId} as HoldInput,{livemode:c.mode==='live'});
         const booking = await payments.checkout(held);

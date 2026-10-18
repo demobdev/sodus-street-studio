@@ -37,13 +37,13 @@ export function Header() {
           />
         </Link>
 
-        <nav className="hidden items-center gap-5 xl:flex">
+        <nav aria-label="Primary navigation" className="hidden items-center gap-5 xl:flex">
           {site.nav.map((item) => (
             <NavLink
               key={item.href}
               to={item.href}
               className={({ isActive }) =>
-                `text-sm font-medium tracking-wide transition hover:text-gold-dark ${
+                `inline-flex min-h-11 items-center text-sm font-medium tracking-wide transition hover:text-gold-dark ${
                   isActive ? 'text-gold-dark' : 'text-navy'
                 }`
               }
@@ -60,7 +60,7 @@ export function Header() {
           <button
             ref={menuButton}
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center border border-navy/20 text-navy xl:hidden"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center border border-navy/20 text-navy xl:hidden"
             aria-label="Toggle menu"
             aria-expanded={open}
             aria-controls="mobile-navigation"
@@ -78,12 +78,12 @@ export function Header() {
 
       {open ? (
         <div id="mobile-navigation" className="min-h-0 overflow-y-auto overscroll-contain border-t border-navy/10 bg-ivory px-5 py-4 xl:hidden">
-          <nav className="flex flex-col gap-3">
+          <nav aria-label="Primary navigation" className="flex flex-col gap-3">
             {site.nav.map((item) => (
               <NavLink
                 key={item.href}
                 to={item.href}
-                className="py-2 text-base font-medium text-navy"
+                className={({ isActive }) => `inline-flex min-h-11 items-center py-2 text-base font-medium ${isActive ? 'text-gold-dark' : 'text-navy'}`}
                 onClick={() => setOpen(false)}
               >
                 {item.label}

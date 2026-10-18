@@ -11,6 +11,15 @@
     @apply bg-ivory font-sans text-navy antialiased;
   }
 
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid theme('colors.gold.dark');
+    outline-offset: 4px;
+  }
+
   ::selection {
     @apply bg-gold/30 text-navy;
   }
@@ -26,15 +35,15 @@
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-sm bg-gold px-6 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-navy transition duration-300 hover:bg-gold-light;
+    @apply inline-flex min-h-11 items-center justify-center rounded-sm bg-gold px-6 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-navy transition duration-300 hover:bg-gold-light;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-sm border border-ivory/70 bg-transparent px-6 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-ivory transition duration-300 hover:border-gold hover:text-gold;
+    @apply inline-flex min-h-11 items-center justify-center rounded-sm border border-ivory/70 bg-transparent px-6 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-ivory transition duration-300 hover:border-gold hover:text-gold;
   }
 
   .btn-outline {
-    @apply inline-flex items-center justify-center rounded-sm border border-navy/25 bg-transparent px-6 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-navy transition duration-300 hover:border-gold hover:text-gold-dark;
+    @apply inline-flex min-h-11 items-center justify-center rounded-sm border border-navy/25 bg-transparent px-6 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-navy transition duration-300 hover:border-gold hover:text-gold-dark;
   }
 
   .section-label {
@@ -46,6 +55,24 @@
   }
 
   .input-field {
-    @apply w-full rounded-sm border border-navy/15 bg-white px-4 py-3 text-navy outline-none transition focus:border-gold;
+    @apply w-full min-w-0 rounded-sm border border-navy/25 bg-white px-4 py-3 text-base text-navy transition focus:border-gold-dark;
+  }
+
+  .input-field::placeholder {
+    @apply text-navy-muted/75 opacity-100;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

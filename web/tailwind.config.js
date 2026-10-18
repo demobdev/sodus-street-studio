@@ -12,7 +12,7 @@ export default {
         gold: {
           DEFAULT: '#B8954A',
           light: '#D4B86A',
-          dark: '#8F7135',
+          dark: '#80652F',
         },
         ivory: {
           DEFAULT: '#F8F5EF',

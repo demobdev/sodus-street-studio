@@ -14,7 +14,7 @@ export function Booking() {
     setSelectedSession(sessionTitle)
     setActiveSession(null)
     document.getElementById('booking-form')?.scrollIntoView({
-      behavior: 'smooth',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
       block: 'start',
     })
   }
@@ -42,7 +42,7 @@ export function Booking() {
                 key={session.id}
                 type="button"
                 onClick={() => setActiveSession(session)}
-                className="border border-navy/10 bg-white px-5 py-5 text-left transition duration-300 hover:border-gold hover:shadow-soft focus:outline-none focus:ring-2 focus:ring-gold/40"
+                className="border border-navy/10 bg-white px-5 py-5 text-left transition duration-300 hover:border-gold hover:shadow-soft"
               >
                 <span className="block font-medium text-navy">{session.title}</span>
                 <span className="mt-2 block text-sm text-navy-muted">

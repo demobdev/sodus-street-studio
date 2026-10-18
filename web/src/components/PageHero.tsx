@@ -18,7 +18,7 @@ export function PageHero({ label, title, description, image, children }: Props) 
         className="absolute inset-0 h-full w-full object-cover object-center"
       />
       <div
-        className="absolute inset-0 bg-gradient-to-r from-navy/92 via-navy/75 to-navy/40"
+        className="absolute inset-0 bg-gradient-to-r from-navy/[0.92] via-navy/75 to-navy/40"
         aria-hidden
       />
       <div

@@ -40,7 +40,7 @@ export function Home() {
           className="absolute inset-0 h-full w-full scale-105 object-cover object-[70%_45%] animate-fade-in"
         />
         <div
-          className="absolute inset-0 bg-gradient-to-r from-navy/92 via-navy/72 to-navy/35"
+          className="absolute inset-0 bg-gradient-to-r from-navy/[0.92] via-navy/[0.72] to-navy/35"
           aria-hidden
         />
         <div

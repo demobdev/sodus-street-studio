@@ -67,7 +67,7 @@ export function SessionTypeModal({ session, onClose, onBook }: Props) {
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border border-gold/30 bg-ivory shadow-soft animate-fade-up"
+        className="max-h-[90dvh] w-full max-w-2xl overflow-y-auto border border-gold/30 bg-ivory shadow-soft animate-fade-up"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 border-b border-navy/10 px-6 py-5">
@@ -81,7 +81,7 @@ export function SessionTypeModal({ session, onClose, onBook }: Props) {
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="mt-1 inline-flex h-9 w-9 items-center justify-center border border-navy/15 text-xl text-navy transition hover:border-gold hover:text-gold-dark"
+            className="mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center border border-navy/15 text-xl text-navy transition hover:border-gold hover:text-gold-dark"
             aria-label="Close"
           >
             ×

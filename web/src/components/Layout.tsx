@@ -53,10 +53,16 @@ export function Layout() {
   }, [pathname, hash, key])
 
   return (
-    <div className="min-h-screen pb-20 sm:pb-0">
+    <div className="min-h-screen pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-0">
       <PageMetadata />
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-sm focus:bg-navy focus:px-4 focus:py-3 focus:font-semibold focus:text-ivory"
+      >
+        Skip to content
+      </a>
       <Header />
-      <main className="[&_[id]]:scroll-mt-28">
+      <main id="main-content" tabIndex={-1} className="scroll-mt-28 [&_[id]]:scroll-mt-28">
         <Outlet />
       </main>
       <Footer />

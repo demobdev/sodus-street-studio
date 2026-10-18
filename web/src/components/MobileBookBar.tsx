@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 export function MobileBookBar() {
   const iglooPage = useLocation().pathname.startsWith('/igloos')
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-navy/10 bg-ivory/95 p-3 backdrop-blur sm:hidden">
+    <nav aria-label="Quick links" className="fixed inset-x-0 bottom-0 z-40 border-t border-navy/10 bg-ivory/95 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur sm:hidden">
       <div className="grid grid-cols-3 gap-2 text-center text-xs font-semibold uppercase tracking-wider">
         <Link to={iglooPage ? '/igloos' : '/booking'} className="rounded-sm bg-gold px-2 py-3 text-navy">
           {iglooPage ? 'Igloos' : 'Book'}
@@ -15,6 +15,6 @@ export function MobileBookBar() {
           Contact
         </Link>
       </div>
-    </div>
+    </nav>
   )
 }

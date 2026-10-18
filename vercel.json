@@ -12,6 +12,8 @@
   ],
   "rewrites": [
     { "source": "/api/igloo/:route*", "destination": "/api/igloo?route=:route*" },
+    { "source": "/igloos", "destination": "/igloos/index.html" },
+    { "source": "/igloos/", "destination": "/igloos/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

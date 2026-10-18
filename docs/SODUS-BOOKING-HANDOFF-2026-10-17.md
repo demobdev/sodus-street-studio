@@ -2,7 +2,7 @@
 
 ## Current status
 
-Customer bookings and live refunds remain disabled. The approved-policy, venue-closure refund and notification changes are deployed to the stable Vercel site. Resend domain/DNS verification, production sending credential and production staff sign-in are complete; email delivery is enabled. A real Stripe **sandbox** $243 payment and full $243 refund succeeded, with guest/staff/refund emails received in Demo's inbox and actual Stripe-origin events stored. Replay verification and sandbox cleanup are complete. No real money moved and no test emails were sent to Maát. See [the email and sandbox verification report](SODUS-EMAIL-AND-SANDBOX-VERIFICATION-2026-10-17.md) for identifiers and proof. These checks do not open bookings; an approved launch decision is still needed after final production configuration review.
+Customer bookings and live refunds remain disabled. Production email setup, the real **sandbox** $243 payment/full refund lifecycle, delivered notifications, replay verification and test cleanup are complete. The [production configuration review](SODUS-PRODUCTION-REVIEW-2026-10-17.md) is also complete: Stripe payments/payouts are active, the saved key/webhook/tax/catalog settings agree, and public checkout remains blocked. The igloo page now has validated structured data and specific metadata. No real money moved and no test emails were sent to Maát. See [the email and sandbox verification report](SODUS-EMAIL-AND-SANDBOX-VERIFICATION-2026-10-17.md) for identifiers and proof. Custom-domain cutover, Maát's inquiry-form inbox confirmation and the user's launch decision remain separate; keep bookings closed.
 
 ## Decisions received
 
@@ -73,4 +73,4 @@ Earlier references to an owner-controlled live-card smoke test are superseded: [
 - Final sandbox replay and shutdown proof: `sandbox-webhook-replay-delivered.png` and `sandbox-webhook-disabled.png` in the same folder. The real sandbox payment/refund audit remains retained after retirement; no temporary API or tunnel remains active.
 - GoDaddy currently points the root at its WebsiteBuilder site and `www` at the root. Website DNS has not been switched to Vercel. Treat custom-domain cutover separately from sender DNS and verify the public origin, forms and certificates when performed.
 
-Production customer bookings and live refunds remain disabled. The completed test and cleanup work does not replace the final production review and approved launch decision.
+The production review is complete; its current results and remaining prelaunch steps are in [the production review](SODUS-PRODUCTION-REVIEW-2026-10-17.md). Production customer bookings and live refunds remain disabled until explicitly authorized. References above to a future production review are historical; the remaining work is custom-domain cutover, separate inquiry inbox receipt and a launch decision.

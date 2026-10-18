@@ -1,5 +1,7 @@
 # Sodus launch check and Maát email draft — October 17, 2026
 
+**Evening update:** Maát answered the outstanding policy questions at 6:48 p.m. Eastern (`1a14c0deb4708ec5`). The current requirements and technical blockers are in [the booking handoff](SODUS-BOOKING-HANDOFF-2026-10-17.md). Form activation is now observed and one post-activation retest was accepted by FormSubmit; inbox receipt is still unconfirmed. The sent-email transcript and earlier test results below remain historical records.
+
 ## Current result
 
 Stripe's production connection is installed, but paid bookings remain closed. The public catalog returned `mode: live`, `bookingOpen: false`, and no exposed packages or slots. The initial morning check found the stable production alias READY on commit `33b7072`, deployment `dpl_6JzpuLnSnoLJVxgfVvU1vVuUwSQA`. The earlier failed deployment email is historical; it does not describe the current release.
@@ -21,7 +23,7 @@ The page displayed this provider error, not a success state:
 
 > This form needs Activation. We've sent you an email containing an 'Activate Form' link. Just click it and your form will be actived!
 
-FormSubmit reports sending an activation email. Maát's inbox is not accessible here, so its receipt and the inquiry's eventual delivery are unverified. Ask her to activate the form, then perform another clearly labeled test and obtain inbox confirmation. Do not repeatedly submit while activation is pending. All three inquiry forms use the same recipient and transport, but only the igloo form was exercised in this live test. They do not save requests in the application's database or reserve inventory.
+At this morning check, FormSubmit reported sending an activation email and the next step was activation followed by one clearly labelled retest. The evening update above supersedes that blocker: activation was observed and the one retest was provider-accepted; Maát's inbox receipt is still unverified. All three inquiry forms use the same recipient and transport, but only the igloo form was exercised. They do not save requests in the application's database or reserve inventory.
 
 Proof: `output/igloo-2026-10-17/form-activation-required.png`.
 
@@ -32,21 +34,20 @@ Proof: `output/igloo-2026-10-17/form-activation-required.png`.
 - Maát already sent a Hightail transfer on October 15 at 11:22 p.m. Eastern: **13 files**, 35 MB, subject **Sodus Street Studio**. The shared page is accessible and says access never expires. Her message says some images are actual and some are AI, with furniture not yet installed. It contains the landing-page brief, logos, SSS-website.zip and image files. This supersedes the October 16 request for her to provide photos. The two unfurnished views were reviewed and published in the photo release; selection and provenance limitations are recorded in `docs/IGLOO-CONTENT-2026-10-16.md`.
 - Morgan's October 16 reply asks for photos and Sodus GoDaddy domain privileges. The photos are already in Hightail. Domain access still needs verification for the custom website address and outgoing email authentication.
 
-## Still needed from Maát
+## Answers received and remaining client follow-up
 
-1. FormSubmit activation and receipt confirmation after a fresh test.
-2. Applicable tax treatment/rate for the $225 igloo-plus-food bundle, including whether itemization is needed.
-3. Cancellation, weather, rescheduling and refund terms; confirmation of full payment upfront and the current 35-minute booking cutoff.
-4. Preferred outgoing Sodus confirmation email address and domain access for verification.
+Maát confirmed full payment, $225 plus 8% tax ($243 total), a 2 p.m. Eastern event-day cutoff, no customer cancellation/refund/rescheduling/exchange, transfer to a friend/family member, and full refunds for venue closures. Her reply-to preference is `info.sodusstreetstudio@gmail.com`; Demo approved `bookings@sodusstreetstudio.com` as sender. Updated photos are expected Tuesday.
+
+Remaining client follow-up is receipt of the single post-activation inquiry test and DNS access if current team access is insufficient for sender verification. Tax/policy implementation and Stripe refund permissions are our technical work, not unanswered policy questions.
 
 The packages, price, dates and seatings are already supplied; do not ask for them again. The bank account is already connected; do not ask her to add it again.
 
 ## Our remaining work before paid reservations
 
-- Configure and verify the sender, then test guest confirmations and staff sign-in delivery.
-- Complete a controlled cancellation/refund/rescheduling process. Staff can flag a confirmed reservation for cancellation review and withdraw that request; the request records the authenticated staff identity and reason, and keeps inventory and payment status unchanged. This is a review queue only: refund webhooks and rescheduling are not handled yet. A Stripe-dashboard refund alone does not update the reservation or release inventory. This is our implementation/operations gap, not a missing client answer.
-- Provide staff booking alerts or agree on a concrete dashboard-monitoring process; separate staff alerts do not exist yet.
-- Apply approved tax and policies and test actual Stripe-origin payment/webhook/confirmation behavior, including failure, expiration and duplicate handling. Locally signed readiness probes are not a completed Stripe payment test.
+- Verify the created Resend domain through DNS, configure the approved sender/reply-to, then test guest, staff-alert and staff sign-in delivery.
+- Deploy the implemented venue-closure refund workflow and extend the live restricted key/webhook for refunds. The existing key has no Charges and Refunds permission and the endpoint currently has only four Checkout event subscriptions. Keep live refunds disabled until verified. No customer rescheduling path is planned under the approved policy.
+- Durable staff booking and refund-review alerts and guest refund confirmations are implemented and provider-mocked tests pass; real delivery still requires sender verification.
+- Apply approved tax and policies and test actual Stripe-origin payment/refund/webhook/confirmation behavior. Locally signed readiness probes and mocked tests are not a completed live payment/refund test.
 - Arrange an owner-controlled live payment/refund smoke check, then activate the catalog and launch flags only after checks pass.
 
 ## Email sent — October 17, 2026
@@ -81,10 +82,12 @@ Demo authorized forwarding the sent message to Christian Broussely (`christian@b
 
 Intro: “Hi Christian and Morgan, Forwarding the Sodus booking update I sent Maát so you both have the latest status and the final details we’re waiting on. Thanks, Demo.”
 
-## Cancellation review implementation and verification
+## Earlier cancellation review implementation and verification
 
 - Authenticated staff can flag a confirmed reservation with a reason, see active requests first, and withdraw a request by its exact ID. The database retains requester/withdrawer identity and timestamps. Payment state, guest confirmation behavior and capacity stay unchanged.
 - This is an internal review queue, not a completed cancellation/refund/rescheduling workflow. Production staff sign-in still depends on the sender configuration above. No real payments, refunds or guest messages were generated by this work.
 - Server type check and existing test suite passed; six focused cancellation tests and the admin HTTP privacy/authentication test passed. The native pooled PostgreSQL test passed against the separate Neon **development** branch, including simultaneous requests and payment delivery. It removed only its own test records.
 - Web build and lint passed. Local browser testing covered creation and withdrawal, desktop and 390px mobile layouts, no page overflow and no console warnings/errors. The local test request was withdrawn afterward; its audit history remains.
 - Screenshot proof: `C:/Users/Demo Bailey/.codex/visualizations/2026/10/17/sodus-booking-review/cancellation-review-desktop.png` and `cancellation-review-mobile.png` in that directory. These show local test data, not a real cancellation.
+
+The subsequent venue-closure refund and notification implementation supersedes the earlier review-only limitation. See [the current handoff](SODUS-BOOKING-HANDOFF-2026-10-17.md) for scope, tests and remaining production gates; final deployment is pending.

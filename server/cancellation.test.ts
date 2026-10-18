@@ -17,7 +17,7 @@ before(async () => {
 });
 after(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.query('TRUNCATE igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits');
+  await db.query('TRUNCATE igloo_booking_alerts,igloo_refund_events,igloo_refund_operations,igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits');
 });
 
 async function fixture(capacity = 1) {

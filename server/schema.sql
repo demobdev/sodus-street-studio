@@ -52,6 +52,8 @@ ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS tax_rate_id text;
 ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS tax_percentage numeric(7,4) CHECK (tax_percentage >= 0 AND tax_percentage <= 100);
 ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS tax_cents integer NOT NULL DEFAULT 0 CHECK (tax_cents >= 0);
 ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS total_cents integer CHECK (total_cents = amount_cents + tax_cents);
+ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS payment_intent_id text UNIQUE;
+ALTER TABLE igloo_bookings ADD COLUMN IF NOT EXISTS refunded_at timestamptz;
 CREATE INDEX IF NOT EXISTS igloo_bookings_slot_status ON igloo_bookings(slot_id, status);
 CREATE TABLE IF NOT EXISTS igloo_cancellation_requests (
   id uuid PRIMARY KEY,

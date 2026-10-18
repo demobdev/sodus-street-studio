@@ -12,7 +12,7 @@ const config: Config = { local: true, mock: false, mode: 'test', liveAllowed: fa
   secret: 'jobs-fixture-booking-secret-longer-than-thirty-two', adminEmails: [], emailEnabled: true,
   emailKey: 'fixture-only', emailFrom: 'Fixture <no-reply@example.test>' };
 before(async () => { db = await createDatabase({ localPath: 'memory://' }); store = new IglooStore(db); await store.init(); });
-beforeEach(async () => { await db.query('TRUNCATE igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits'); });
+beforeEach(async () => { await db.query('TRUNCATE igloo_booking_alerts,igloo_refund_events,igloo_refund_operations,igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits'); });
 after(async () => { await db.close(); });
 
 async function fixture(capacity = 1) {
@@ -91,4 +91,88 @@ test('jobs retry only a durable unknown Checkout outcome and never originate ano
   assert.deepEqual(recovered, [attempted.id]);
   assert.equal((await store.getBooking(untouched.id))?.checkoutParams, null);
   assert.equal((await store.getBooking(untouched.id))?.sessionId, null);
+});
+
+test('slow Checkout reconciliation defers refund work after 120 seconds and the next invocation resumes it', async t => {
+  const hold = await fixture();
+  const booking = await attach(await hold());
+  let elapsed = 0;
+  let refundRuns = 0;
+  let sends = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    sends += 1;
+    return new Response(JSON.stringify({ id: `email_${sends}` }), { status: 200 });
+  });
+  const payments = { checkout: unexpectedCheckout, reconcile: async (b: Booking) => {
+    elapsed = 120_001;
+    return confirm(b);
+  } };
+  const refunds = { processNext: async () => { refundRuns += 1; } };
+  const first = await runBookingJobs(store, payments, config, refunds, () => elapsed);
+  assert.equal(first.reconciled, 1);
+  assert.equal(first.skipped, 1);
+  assert.equal(refundRuns, 0);
+  assert.equal(sends, 1, 'there is still enough budget for the booking confirmation');
+  assert.equal((await store.getBooking(booking.id))!.emailStatus, 'sent');
+  elapsed = 0;
+  const second = await runBookingJobs(store, payments, config, refunds, () => elapsed);
+  assert.equal(second.skipped, 0);
+  assert.equal(refundRuns, 1);
+  assert.equal(sends, 1, 'already delivered email is not duplicated');
+});
+
+test('work that overruns the email start budget leaves both messages unclaimed for the next invocation', async t => {
+  const hold = await fixture();
+  const booking = await attach(await hold());
+  const settings = { ...config, adminEmails: ['staff@example.test'] };
+  let elapsed = 0;
+  let refundRuns = 0;
+  const sentKeys: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (_url: string, options: RequestInit) => {
+    sentKeys.push(new Headers(options.headers).get('Idempotency-Key')!);
+    return new Response(JSON.stringify({ id: `email_${sentKeys.length}` }), { status: 200 });
+  });
+  const payments = { checkout: unexpectedCheckout, reconcile: async (b: Booking) => {
+    elapsed = 120_000;
+    return confirm(b);
+  } };
+  const first = await runBookingJobs(store, payments, settings, { processNext: async () => {
+    refundRuns += 1;
+    elapsed = 155_001;
+  } }, () => elapsed);
+  assert.equal(refundRuns, 1, 'refund can begin at the 120-second boundary');
+  assert.equal(first.skipped, 2);
+  assert.equal(sentKeys.length, 0);
+  assert.equal((await store.getBooking(booking.id))!.emailStatus, 'pending');
+  assert.equal((await db.query('SELECT claim_token FROM igloo_outbox')).rows[0].claim_token, null);
+  elapsed = 0;
+  await runBookingJobs(store, payments, settings, undefined, () => elapsed);
+  await runBookingJobs(store, payments, settings, undefined, () => elapsed);
+  assert.equal(sentKeys.length, 2, 'one guest confirmation and one staff alert resume exactly once');
+  assert.equal(new Set(sentKeys).size, 2);
+  assert.equal((await store.getBooking(booking.id))!.emailStatus, 'sent');
+});
+
+test('each email pass checks remaining time independently after a slow first send', async t => {
+  const hold = await fixture();
+  const booking = await confirm(await attach(await hold()));
+  const settings = { ...config, adminEmails: ['staff@example.test'] };
+  let elapsed = 0;
+  let sends = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    sends += 1;
+    if (sends === 1) elapsed += 10_000;
+    return new Response(JSON.stringify({ id: `email_${sends}` }), { status: 200 });
+  });
+  const payments = { reconcile: unexpectedCheckout, checkout: unexpectedCheckout };
+  const first = await runBookingJobs(store, payments, settings,
+    { processNext: async () => { elapsed = 155_000; } }, () => elapsed);
+  assert.equal(sends, 1, 'confirmation may start at 155 seconds; the following alert cannot start at 165 seconds');
+  assert.equal(first.skipped, 1);
+  assert.equal((await store.getBooking(booking.id))!.emailStatus, 'sent');
+  assert.equal((await db.query('SELECT id FROM igloo_booking_alerts')).rows.length, 0);
+  elapsed = 0;
+  await runBookingJobs(store, payments, settings, undefined, () => elapsed);
+  await runBookingJobs(store, payments, settings, undefined, () => elapsed);
+  assert.equal(sends, 2, 'the deferred staff alert resumes once on the next invocation');
 });

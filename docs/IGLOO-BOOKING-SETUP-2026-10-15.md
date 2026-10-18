@@ -1,5 +1,7 @@
 # Sodus igloo bookings — setup status, October 15, 2026
 
+**October 17 evening update:** Use [the current booking handoff](SODUS-BOOKING-HANDOFF-2026-10-17.md) for launch decisions and blockers. Maát confirmed $225 + 8% tax ($243), full payment, a 2 p.m. New York event-day cutoff, no customer cancellation/refund/reschedule/exchange, and full refunds for venue closures. The 35-minute cutoff and unanswered package/policy items below are historical. Bank setup was already completed; sender DNS and live refund capability still require technical verification.
+
 **October 16 update:** Maát has now supplied the $225/eight-guest package, four platter choices, four October dates and four igloos per seating, plus a Vimeo community promo. See [the new source and implementation notes](IGLOO-CONTENT-2026-10-16.md). The provisional package table below is historical; do not use its $200/six-guest sample as current terms.
 
 **Production follow-up:** Stripe now shows no active account tasks, and API checks confirm payments and payouts enabled. The October 15 missing-bank observation below is historical. See [October 16 production readiness](PRODUCTION-READINESS-2026-10-16.md) for the separate production database, restricted live key, remaining tax/policy/email requirements and launch gates.

@@ -13,7 +13,9 @@ test('local event has four exclusive platter choices at the supplied base price 
     assert.equal(item.maxGuests, 8);
     assert.equal(item.durationMinutes, 90);
     assert.match(item.policyText, /tax is not calculated/);
-    assert.match(item.policyText, /cancellation terms.*pending/);
+    assert.match(item.policyText, /Customer cancellations, refunds, rescheduling and exchanges are not available/);
+    assert.match(item.policyText, /2pm Eastern/);
+    assert.match(item.policyText, /8% tax.*\$243/);
   }
 });
 

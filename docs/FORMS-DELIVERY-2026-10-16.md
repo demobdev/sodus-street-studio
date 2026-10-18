@@ -1,6 +1,6 @@
 # Sodus form delivery audit — October 16, 2026
 
-**October 17 live test:** The igloo form returned **Activation required**, and FormSubmit reported sending an activation email to Maát. Inquiry delivery is not confirmed. See [the test record and next steps](LAUNCH-CHECK-AND-MAAT-DRAFT-2026-10-17.md). Other form rows below describe implementation, not independently completed delivery tests.
+**October 17 evening update:** Activation was observed in Maát's screenshot. One post-activation live igloo inquiry retest received FormSubmit acceptance. **Inbox receipt remains unconfirmed.** The earlier activation-required response is retained in [the test record](LAUNCH-CHECK-AND-MAAT-DRAFT-2026-10-17.md). See [the current booking handoff](SODUS-BOOKING-HANDOFF-2026-10-17.md) for sender verification and notification launch requirements. Other form rows describe implementation, not independently completed delivery tests.
 
 This records the implementation at the start of production-readiness work. No test submission, email, or live payment was sent during this audit. Later server/email changes should update the relevant rows before launch.
 
@@ -8,17 +8,18 @@ This records the implementation at the start of production-readiness work. No te
 | --- | --- | --- |
 | Studio session request, `/booking` | Browser sends JSON to `https://formsubmit.co/ajax/maat@onthemovecs.com`. Subject: `Sodus Street Studio Booking Request — {session type}`. Reply-To is the guest email. Maát follows up with availability and payment instructions. | No app database record, reserved inventory, payment, calendar event, staff dashboard entry, or automatic guest confirmation. FormSubmit acceptance is checked before the success state is displayed. Inbox delivery remains unverified. |
 | General contact, `/contact` | Same FormSubmit destination. Subject: `Sodus Street Studio Contact Inquiry`. Reply-To is the guest email. | No app database record or CRM integration. Inbox delivery remains unverified. |
-| Igloo inquiry, `/igloos` while booking is closed | Same FormSubmit destination. Subject: `Sodus Street Studio — Igloo Event Inquiry`. Includes preferred date and `requestType: inquiry-only`. Reply-To is the guest email. | Does not hold an igloo or take payment. No booking database entry. Inbox delivery remains unverified. |
+| Igloo inquiry, `/igloos` while booking is closed | Same FormSubmit destination. Subject: `Sodus Street Studio — Igloo Event Inquiry`. Includes preferred date and `requestType: inquiry-only`. Reply-To is the guest email. | Does not hold an igloo or take payment. No booking database entry. One post-activation test was accepted by FormSubmit October 17; Maát's inbox receipt remains unverified. |
 | Paid igloo reservation, `/igloos` when enabled | Same-origin `POST /api/igloo/checkout`; server saves a hold, creates a Stripe Checkout Session, and redirects the guest to `checkout.stripe.com`. | Guest details and reservation snapshots are stored in `igloo_bookings`. Payment status is checked server-side using signed Stripe webhooks or reconciliation. A redirect alone never confirms payment. |
-| Igloo guest confirmation | At audit time, the durable `igloo_outbox` sends confirmation to the guest’s booking email through Resend after payment is verified. | Requires configured and verified sender, enabled delivery, and actual delivery testing. No automatic Maát/staff booking alert existed at the start of this audit. |
+| Igloo guest confirmation | The durable `igloo_outbox` sends confirmation to the guest’s booking email through Resend after payment is verified. | Requires verified sender, enabled delivery and actual delivery testing. Approved sender: `bookings@sodusstreetstudio.com`; reply-to: `info.sodusstreetstudio@gmail.com`. Resend domain created; DNS verification pending. |
+| Staff booking/refund-review alerts and guest full-refund confirmation | New `igloo_booking_alerts` queues immutable messages for current staff allowlist recipients or the affected guest. Refund success notices require a verified full refund and cancelled reservation. | Nine provider-mocked tests pass. Sending is disabled until configured. Queueing, a mocked acknowledgment or a form success state is not proof of inbox receipt. |
 | Staff sign-in, `/igloos/manage` | `POST /api/igloo/admin/login` accepts only addresses allowlisted in `BOOKING_ADMIN_EMAILS`; Resend sends a one-time sign-in link. Response is generic to other addresses. | Hashed one-time credentials and sessions are stored in the booking database. `.env.example` names `demo@blockbusters.tech` and `maat@onthemovecs.com`; an example is not proof of deployed settings. Local mock mode displays a clearly labeled test link without sending email. |
 | Staff package / seating editors | Authenticated `POST /api/igloo/admin/package` and `/admin/slot`. | Writes booking database package and seating records. Does not email customers or charge cards. |
 
 ## What needs confirmation from Maát
 
-- Confirm `maat@onthemovecs.com` remains the intended recipient for all three request forms, or supply the preferred Sodus address and any additional recipients.
-- Confirm receipt of a clearly labeled test submitted from the final public website. If FormSubmit sends an activation request, she must confirm the receiving address first. Check spam as well as inbox. Do not assume deployment or a browser success message proves inbox delivery.
-- Confirm the intended Sodus sender/reply-to address for reservation confirmations and staff alerts, so its domain can be verified and end-to-end delivery tested.
+- Confirm receipt of the single post-activation test in inbox or spam. Activation and provider acceptance have been observed; inbox delivery has not.
+- Existing inquiry delivery remains `maat@onthemovecs.com`. The new Gmail reply-to for booking emails does not by itself authorize changing all form recipients.
+- Sender/reply-to choices are answered. Finish DNS verification and end-to-end guest/staff email testing; request domain access only if our existing team access is insufficient.
 
 ## Evidence and limits
 

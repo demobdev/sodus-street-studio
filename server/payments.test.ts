@@ -21,7 +21,7 @@ before(async () => {
   await store.init();
 });
 beforeEach(async () => {
-  await db.query('TRUNCATE igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits');
+  await db.query('TRUNCATE igloo_booking_alerts,igloo_refund_events,igloo_refund_operations,igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits');
 });
 after(async () => { await db.close(); });
 
@@ -85,7 +85,7 @@ test('approved exclusive tax is snapshotted before Checkout and matching signed 
   } });
   const checkedOut = await payments.checkout(booking);
   assert.equal(checkedOut.status, 'held');
-  const payload = JSON.stringify({ id: 'evt_tax_fixture', object: 'event', type: 'checkout.session.completed',
+  const payload = JSON.stringify({ id: 'evt_tax_fixture', object: 'event', type: 'checkout.session.completed', livemode: false,
     data: { object: session(booking, { amount_subtotal: 12_345, amount_total: 12_962, total_details: { amount_tax: 617 }, payment_status: 'paid', status: 'complete' }) } });
   const signature = payments.stripe!.webhooks.generateTestHeaderString({ payload, secret: config.webhookSecret! });
   await payments.webhook(Buffer.from(payload), signature);
@@ -133,6 +133,39 @@ test('a live Stripe account without charges enabled cannot create Checkout', asy
   const { payments, hold } = await fixture(1, { mode: 'live', stripeKey: 'rk_live_fixture', taxApproved: true, stripeTaxRateId: 'txr_fixture' });
   Object.assign(payments.stripe!.accounts, { retrieveCurrent: async () => ({ id: config.stripeAccount, charges_enabled: false }) });
   await assert.rejects(payments.checkout(await hold()), /not enabled live payments/);
+});
+
+test('identity-only refund verification permits paused charges without bypassing checkout verification', async () => {
+  const { payments } = await fixture(1, { mode: 'live', stripeKey: 'rk_live_fixture' });
+  let enabled = false;
+  const options: unknown[] = [];
+  Object.assign(payments.stripe!.accounts, { retrieveCurrent: async (_params: unknown, requestOptions: unknown) => {
+    options.push(requestOptions);
+    return { id: config.stripeAccount, charges_enabled: enabled };
+  } });
+  await payments.verifyAccount({ requireCharges: false });
+  assert.deepEqual(options[0], { maxNetworkRetries: 0, timeout: 10_000 });
+  await assert.rejects(payments.verifyAccount(), /not enabled live payments/);
+  enabled = true;
+  await payments.verifyAccount();
+  assert.equal(options.length, 2, 'a paused checkout must refresh the account on its next attempt');
+  assert.equal(options[1], undefined, 'ordinary checkout keeps its existing Stripe retry settings');
+});
+
+test('signed refund webhooks dispatch while charges are paused and still require the expected Stripe account', async () => {
+  const { payments, hold } = await fixture(1, { mode: 'live', stripeKey: 'rk_live_fixture' });
+  Object.assign(payments.stripe!.accounts, { retrieveCurrent: async () => ({ id: config.stripeAccount, charges_enabled: false }) });
+  const payload = JSON.stringify({ id: 'evt_refund_paused', object: 'event', type: 'refund.updated', livemode: true,
+    data: { object: { id: 're_fixture', object: 'refund' } } });
+  const signature = payments.stripe!.webhooks.generateTestHeaderString({ payload, secret: config.webhookSecret! });
+  let dispatched = 0;
+  await payments.webhook(Buffer.from(payload), signature, async () => { dispatched += 1; });
+  assert.equal(dispatched, 1);
+  await assert.rejects(payments.checkout(await hold()), /not enabled live payments/);
+  await assert.rejects(payments.webhook(Buffer.from(`${payload} `), signature, async () => { dispatched += 1; }), /Invalid webhook signature/);
+  Object.assign(payments.stripe!.accounts, { retrieveCurrent: async () => ({ id: 'acct_wrong', charges_enabled: false }) });
+  await assert.rejects(payments.webhook(Buffer.from(payload), signature, async () => { dispatched += 1; }), /Stripe account mismatch/);
+  assert.equal(dispatched, 1);
 });
 
 test('tax lookup failure releases only its never-attempted hold after TTL and a stale caller cannot create Checkout', async () => {

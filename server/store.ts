@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Database, Queryable } from './db.js';
+import { BOOKING_CUTOFF_SQL } from './booking-policy.js';
 
 export type BookingStatus = 'held' | 'awaiting_payment' | 'confirmed' | 'expired' | 'cancelled' | 'needs_review';
 export type EmailStatus = 'pending' | 'sending' | 'sent' | 'failed';
@@ -25,6 +26,7 @@ export interface Booking {
   livemode: boolean; sessionId: string | null; checkoutUrl: string | null; expiresAt: string | null;
   checkoutParams: Record<string, unknown> | null; checkoutAttemptedAt: string | null;
   emailStatus: EmailStatus; reviewReason: string | null; createdAt: string;
+  paymentIntentId: string | null; refundedAt: string | null;
 }
 export interface CheckoutAttachment {
   sessionId: string; url: string; expiresAt: string; livemode: boolean; amountCents: number; currency: string;
@@ -35,6 +37,7 @@ export interface PaymentEvidence {
   subtotalCents?: number; taxCents?: number;
   currency: string; paymentStatus: 'paid' | 'unpaid' | 'no_payment_required';
   sessionStatus: 'open' | 'complete' | 'expired'; type: string;
+  paymentIntentId?: string;
 }
 export interface OutboxItem { id: string; claimToken: string; booking: Booking; attempts: number }
 export interface CheckoutTax { rateId: string; percentage: number; taxCents: number }
@@ -48,8 +51,8 @@ export class StoreError extends Error {
 
 type Row = Record<string, unknown>;
 const occupied = "('held','awaiting_payment','confirmed','needs_review')";
-// Launch default: stop new reservations 35 minutes before arrival, leaving margin for the 31-minute Checkout session.
-const bookingCutoff = "now() + interval '35 minutes'";
+// New reservations close at 2pm New York time on the event day, regardless of seating time.
+const bookingWindow = `starts_at > now() AND now() < ${BOOKING_CUTOFF_SQL}`;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const iso = (value: unknown): string => new Date(value as string | number | Date).toISOString();
 const optionalIso = (value: unknown): string | null => value == null ? null : iso(value);
@@ -80,7 +83,7 @@ function mapBooking(row: Row): Booking {
     checkoutUrl: row.checkout_url == null ? null : String(row.checkout_url), expiresAt: optionalIso(row.expires_at),
     checkoutParams: row.checkout_params as Record<string, unknown> | null, checkoutAttemptedAt: optionalIso(row.checkout_attempted_at),
     emailStatus: row.email_status as EmailStatus, reviewReason: row.review_reason == null ? null : String(row.review_reason),
-    createdAt: iso(row.created_at) };
+    createdAt: iso(row.created_at), paymentIntentId: row.payment_intent_id == null ? null : String(row.payment_intent_id), refundedAt: optionalIso(row.refunded_at) };
 }
 async function lockedBooking(db: Queryable, id: string): Promise<Row> {
   const { rows } = await db.query('SELECT * FROM igloo_bookings WHERE id=$1 FOR UPDATE', [id]);
@@ -100,7 +103,7 @@ export class IglooStore {
   constructor(public readonly db: Database) {}
 
   async init(): Promise<void> {
-    const schema = await readFile(new URL('./schema.sql', import.meta.url), 'utf8');
+    const schema = (await Promise.all(['schema.sql','refund-schema.sql','booking-alerts-schema.sql'].map(file => readFile(new URL(`./${file}`, import.meta.url), 'utf8')))).join('\n');
     // Schema contains only simple statements, so both Pg and PGlite use the same migration path.
     await this.db.transaction(async (tx) => {
       await tx.query('SELECT pg_advisory_xact_lock(741001)');
@@ -128,7 +131,7 @@ export class IglooStore {
 
   async listSlots(includeClosed = false): Promise<Slot[]> {
     const { rows } = await this.db.query(`SELECT s.*, (SELECT count(*) FROM igloo_bookings b WHERE b.slot_id=s.id AND b.status IN ${occupied})::integer AS occupied
-      FROM igloo_slots s ${includeClosed ? '' : `WHERE s.status='open' AND s.starts_at > ${bookingCutoff}`} ORDER BY starts_at`);
+      FROM igloo_slots s ${includeClosed ? '' : `WHERE s.status='open' AND ${bookingWindow}`} ORDER BY starts_at`);
     return rows.map(mapSlot);
   }
 
@@ -168,7 +171,7 @@ export class IglooStore {
         return mapBooking(replay);
       }
       const item = (await tx.query("SELECT * FROM igloo_packages WHERE id=$1 AND status='active' FOR SHARE", [input.packageId])).rows[0];
-      const slot = (await tx.query(`SELECT * FROM igloo_slots WHERE id=$1 AND status='open' AND starts_at>${bookingCutoff} FOR UPDATE`, [input.slotId])).rows[0];
+      const slot = (await tx.query(`SELECT * FROM igloo_slots WHERE id=$1 AND status='open' AND ${bookingWindow} FOR UPDATE`, [input.slotId])).rows[0];
       if (!item || !slot) throw new StoreError('This package or time is no longer available.', 409, 'UNAVAILABLE');
       if (input.guests > Number(item.max_guests)) throw badInput('The party exceeds this package’s guest limit.');
       if (Date.parse(iso(slot.ends_at)) - Date.parse(iso(slot.starts_at)) !== Number(item.duration_minutes) * 60_000) throw badInput('This package does not match the selected time slot.');
@@ -251,6 +254,11 @@ export class IglooStore {
       const processed = (await tx.query('SELECT * FROM igloo_payment_events WHERE event_id=$1', [event.eventId])).rows[0];
       if (processed) {
         if (processed.booking_id !== event.bookingId || processed.session_id !== event.sessionId) throw new StoreError('Payment event identity mismatch.', 409, 'EVENT_CONFLICT');
+        const previous = await lockedBooking(tx,event.bookingId);
+        // Backfill old sessions on reconciliation without changing their booking state.
+        if (previous.payment_intent_id == null && event.paymentIntentId && previous.session_id === event.sessionId && previous.livemode === event.livemode && !amountMismatch(previous,event) && previous.currency === event.currency.toLowerCase()) {
+          await tx.query('UPDATE igloo_bookings SET payment_intent_id=$2 WHERE id=$1',[event.bookingId,event.paymentIntentId]);
+        }
         return mapBooking(await lockedBooking(tx, event.bookingId));
       }
       const found = (await tx.query('SELECT * FROM igloo_bookings WHERE id=$1 FOR UPDATE', [event.bookingId])).rows[0];
@@ -258,10 +266,15 @@ export class IglooStore {
       const row = found;
       let status = row.status as BookingStatus;
       let reason: string | null = row.review_reason == null ? null : String(row.review_reason);
-      const mismatch = (row.session_id != null && row.session_id !== event.sessionId) || row.livemode !== event.livemode || amountMismatch(row, event) || row.currency !== event.currency.toLowerCase();
+      const mismatch = (row.session_id != null && row.session_id !== event.sessionId) || (row.payment_intent_id != null && event.paymentIntentId != null && row.payment_intent_id !== event.paymentIntentId) || row.livemode !== event.livemode || amountMismatch(row, event) || row.currency !== event.currency.toLowerCase();
       const paid = event.paymentStatus === 'paid' && event.sessionStatus === 'complete';
       const successEvidence = ['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'reconcile'].includes(event.type);
-      if (mismatch) { status = 'needs_review'; reason = 'Payment session, mode, amount or currency does not match this reservation.'; }
+      if (row.refunded_at != null) {
+        // A late Checkout event must never restore capacity already released after a verified refund.
+        status = 'cancelled';
+        if (mismatch) reason = 'Payment evidence changed after refund. Staff must review the payment; reservation remains cancelled.';
+      }
+      else if (mismatch) { status = 'needs_review'; reason = 'Payment session, mode, amount or currency does not match this reservation.'; }
       else if (status === 'needs_review') { /* Manual review cannot be cleared by another automatic delivery. */ }
       else if (event.paymentStatus === 'no_payment_required' && event.sessionStatus === 'complete') { status = 'needs_review'; reason = 'Checkout completed without the required package payment.'; }
       else if (paid && successEvidence) {
@@ -273,7 +286,7 @@ export class IglooStore {
         else if (['checkout.session.completed', 'reconcile'].includes(event.type) && event.sessionStatus === 'complete' && event.paymentStatus === 'unpaid' && !['expired', 'cancelled'].includes(status)) status = 'awaiting_payment';
       }
       // Verified webhook metadata identifies the booking even if Stripe delivered before our create response.
-      const { rows } = await tx.query('UPDATE igloo_bookings SET status=$2,review_reason=$3,session_id=COALESCE(session_id,$4),updated_at=now() WHERE id=$1 RETURNING *', [event.bookingId, status, reason, mismatch ? null : event.sessionId]);
+      const { rows } = await tx.query('UPDATE igloo_bookings SET status=$2,review_reason=$3,session_id=COALESCE(session_id,$4),payment_intent_id=COALESCE(payment_intent_id,$5),updated_at=now() WHERE id=$1 RETURNING *', [event.bookingId, status, reason, mismatch ? null : event.sessionId, mismatch ? null : event.paymentIntentId ?? null]);
       await tx.query('INSERT INTO igloo_payment_events (event_id,booking_id,session_id) VALUES ($1,$2,$3)', [event.eventId, event.bookingId, event.sessionId]);
       if (status === 'confirmed' && row.status !== 'confirmed') await tx.query('INSERT INTO igloo_outbox (id,booking_id) VALUES ($1,$2) ON CONFLICT (booking_id) DO NOTHING', [randomUUID(), event.bookingId]);
       return mapBooking(rows[0]);
@@ -331,13 +344,21 @@ export class IglooStore {
     });
   }
 
-  async claimConfirmationEmails(limit = 20): Promise<OutboxItem[]> {
+  async claimConfirmationEmails(limit = 20, livemode = false): Promise<OutboxItem[]> {
     return this.db.transaction(async (tx) => {
       const { rows } = await tx.query(`SELECT o.* FROM igloo_outbox o JOIN igloo_bookings b ON b.id=o.booking_id
-        WHERE b.status='confirmed' AND ((o.status IN ('pending','failed') AND o.next_attempt_at<=now()) OR (o.status='sending' AND o.lease_until<now()))
-        ORDER BY o.created_at LIMIT $1 FOR UPDATE OF o SKIP LOCKED`, [Math.min(100, Math.max(1, limit))]);
+        WHERE b.status='confirmed' AND b.livemode=$2
+          AND NOT EXISTS(SELECT 1 FROM igloo_refund_operations r WHERE r.booking_id=b.id)
+          AND ((o.status IN ('pending','failed') AND o.next_attempt_at<=now()) OR (o.status='sending' AND o.lease_until<now()))
+        ORDER BY o.created_at LIMIT $1 FOR UPDATE OF o SKIP LOCKED`, [Math.min(100, Math.max(1, limit)), livemode]);
       const output: OutboxItem[] = [];
       for (const row of rows) {
+        // Serialize the final eligibility check against a closure request or payment update.
+        // Read the refund operation after acquiring the booking lock so a just-committed
+        // closure cannot leave an old confirmation eligible for a retry.
+        const current = (await tx.query('SELECT status,livemode FROM igloo_bookings WHERE id=$1 FOR UPDATE', [row.booking_id])).rows[0];
+        if (!current || current.status !== 'confirmed' || current.livemode !== livemode ||
+          (await tx.query('SELECT id FROM igloo_refund_operations WHERE booking_id=$1', [row.booking_id])).rows.length) continue;
         const claimToken = randomUUID();
         await tx.query("UPDATE igloo_outbox SET status='sending',claim_token=$2,lease_until=now()+interval '5 minutes',attempts=attempts+1 WHERE id=$1", [row.id, claimToken]);
         const booking = (await tx.query("UPDATE igloo_bookings SET email_status='sending' WHERE id=$1 RETURNING *", [row.booking_id])).rows[0];

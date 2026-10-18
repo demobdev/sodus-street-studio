@@ -70,7 +70,7 @@ export function Igloos() {
           <div className="border border-gold/40 bg-ivory/[0.03] p-7 md:p-9">
             <p className="section-label text-gold-light">Your evening, together</p>
             <p className="mt-5 font-display text-6xl text-ivory">${iglooEvent.priceCents / 100}<span className="ml-2 text-2xl text-ivory/70">per igloo</span></p>
-            <p className="mt-2 text-sm text-ivory/65">Plus applicable tax</p>
+            <p className="mt-2 text-sm text-ivory/65">Plus 8% tax · $243 total</p>
             <ul className="mt-7 space-y-3 border-t border-gold/30 pt-6 text-ivory/85">
               <li>Up to {iglooEvent.maxGuests} guests</li>
               <li>{iglooEvent.durationMinutes} minutes in your own igloo</li>
@@ -163,6 +163,20 @@ export function Igloos() {
                 <p className="mt-3 leading-relaxed text-navy-muted">{platter.description}</p>
               </article>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="section-pad border-b border-navy/10" aria-labelledby="igloo-booking-terms-title">
+        <div className="container-site grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
+          <div>
+            <p className="section-label">Before you book</p>
+            <h2 id="igloo-booking-terms-title" className="display-title mt-3">Plan with confidence.</h2>
+          </div>
+          <div className="space-y-5 leading-relaxed text-navy-muted">
+            <p>Full payment of $243, including 8% tax, is due at booking. New reservations close at 2pm Eastern on the event day. An already-started checkout can be completed within its payment window.</p>
+            <p>Customer cancellations, refunds, rescheduling and exchanges are not available. If you cannot attend, you may give your ticket to a friend or family member.</p>
+            <p>If Sodus Street Studio closes for weather or unforeseen circumstances, you will receive a full refund.</p>
           </div>
         </div>
       </section>

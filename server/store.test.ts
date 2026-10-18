@@ -9,7 +9,7 @@ let store: IglooStore;
 before(async () => { db = await createDatabase({ localPath: 'memory://' }); store = new IglooStore(db); await store.init(); });
 after(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.query('TRUNCATE igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits');
+  await db.query('TRUNCATE igloo_booking_alerts,igloo_refund_events,igloo_refund_operations,igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits');
 });
 async function fixture(capacity = 1) {
   const item = await store.savePackage({ name: 'Local test igloo', description: 'Test data only', durationMinutes: 90,
@@ -232,15 +232,21 @@ test('uncertain checkout attempts retain inventory for review and cannot downgra
   assert.equal((await store.listSlots())[0].remaining, 0);
 });
 
-test('new reservations close 35 minutes before arrival while staff can still see the time slot', async () => {
+test('new reservations close at 2pm New York on the event day while staff can still see the time slot', async () => {
   const f = await fixture();
-  await db.query("UPDATE igloo_slots SET starts_at=now()+interval '35 minutes',ends_at=now()+interval '125 minutes' WHERE id=$1", [f.slot.id]);
-  assert.equal((await store.listSlots()).length, 0);
-  assert.equal((await store.listSlots(true)).length, 1);
-  await assert.rejects(store.createHold(f.input(), { livemode: false }), hasCode('UNAVAILABLE'));
-  await db.query("UPDATE igloo_slots SET starts_at=now()+interval '36 minutes',ends_at=now()+interval '126 minutes' WHERE id=$1", [f.slot.id]);
-  assert.equal((await store.listSlots()).length, 1);
-  assert.equal((await store.createHold(f.input(), { livemode: false })).status, 'held');
+  // Freeze only the clock in this test's SQL, so exact-boundary checks do not depend on test execution time.
+  function storeAt(instant: string) {
+    const queryAt = (connection: Pick<Database, 'query'>): Database['query'] => (sql, params) => connection.query(sql.replaceAll('now()', `TIMESTAMPTZ '${instant}'`), params);
+    return new IglooStore({ query: queryAt(db), close: async () => {},
+      transaction: (work) => db.transaction((tx) => work({ query: queryAt(tx) })) });
+  }
+  const before = storeAt('2090-10-21T17:59:59.999Z');
+  const cutoff = storeAt('2090-10-21T18:00:00Z');
+  assert.equal((await before.listSlots()).length, 1);
+  assert.equal((await cutoff.listSlots()).length, 0);
+  assert.equal((await cutoff.listSlots(true)).length, 1);
+  await assert.rejects(cutoff.createHold(f.input(), { livemode: false }), hasCode('UNAVAILABLE'));
+  assert.equal((await before.createHold(f.input(), { livemode: false })).status, 'held');
 });
 
 test('reconciliation recognizes completed but unpaid checkout without downgrading a confirmed booking', async () => {

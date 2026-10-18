@@ -44,11 +44,14 @@ export type IglooBooking = {
   totalCents: number
   currency: string
   emailStatus: string
+  refundedAt: string | null
+  refundStatus: RefundOperation['status'] | null
   checkoutUrl?: string
 }
 
-export type AdminBooking = Omit<IglooBooking, 'mode' | 'checkoutUrl'> & {
+export type AdminBooking = Omit<IglooBooking, 'mode' | 'checkoutUrl' | 'refundStatus'> & {
   id: string
+  slotId: string
   name: string
   email: string
   phone: string
@@ -61,12 +64,31 @@ export type AdminBooking = Omit<IglooBooking, 'mode' | 'checkoutUrl'> & {
   } | null
 }
 
+export type RefundOperation = {
+  id: string
+  bookingId: string
+  requestId: string
+  reason: 'weather' | 'venue_closure'
+  note: string
+  actor: string
+  amountCents: number
+  currency: string
+  status: 'requested' | 'pending' | 'succeeded' | 'failed' | 'needs_review'
+  refundId: string | null
+  attemptedAt: string | null
+  completedAt: string | null
+  createdAt: string
+  error: string | null
+}
+
 export type IglooAdminData = {
   mode: BookingMode
   readiness: string[]
   packages: IglooPackage[]
   slots: IglooSlot[]
   bookings: AdminBooking[]
+  refundsEnabled: boolean
+  refunds: RefundOperation[]
 }
 
 export class IglooApiError extends Error {

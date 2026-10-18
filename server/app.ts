@@ -8,6 +8,8 @@ import { bookingId, bookingToken } from './tokens.js';
 import { readiness, type Config } from './config.js';
 import { deliverConfirmations, sendEmail } from './email.js';
 import { authorizedJob, runBookingJobs } from './jobs.js';
+import { Refunds } from './refunds.js';
+import { deliverBookingAlerts } from './booking-alerts.js';
 
 const header = (req: IncomingMessage, name: string) => { const value = req.headers[name]; return Array.isArray(value) ? value[0] : value || ''; };
 const cookieName = 'sodus_igloo_admin';
@@ -16,7 +18,7 @@ export function publicBooking(b: Booking) {
   return { mode: b.livemode ? 'live' : 'test', reference: b.reference, status: b.status, packageName: b.packageName,
     startsAt: b.startsAt, endsAt: b.endsAt, guests: b.guests, amountCents: b.amountCents, currency: b.currency,
     taxCents: b.taxCents, totalCents: b.totalCents,
-    emailStatus: b.emailStatus, ...(b.status === 'held' && b.checkoutUrl ? { checkoutUrl: b.checkoutUrl } : {}) };
+    emailStatus: b.emailStatus, refundedAt: b.refundedAt, ...(b.status === 'held' && b.checkoutUrl ? { checkoutUrl: b.checkoutUrl } : {}) };
 }
 async function rawBody(req: IncomingMessage): Promise<Buffer> {
   let size = 0; const chunks: Buffer[] = [];
@@ -24,11 +26,12 @@ async function rawBody(req: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 export function createApp(c: Config, existingDb?: Database) {
-  let initialized: Promise<{ store: IglooStore; auth: AdminAuth; payments: Payments }> | undefined;
+  let initialized: Promise<{ store: IglooStore; auth: AdminAuth; payments: Payments; refunds: Refunds }> | undefined;
   const initialize = () => initialized ??= (async () => {
     const db = existingDb || await createDatabase(c.mock ? { localPath: './.data/igloo-local' } : { connectionString: c.databaseUrl });
     const store = new IglooStore(db); await store.init();
-    return { store, auth: new AdminAuth(db, c.secret, c.adminEmails), payments: new Payments(store, c) };
+    const payments = new Payments(store,c);
+    return { store, auth: new AdminAuth(db, c.secret, c.adminEmails), payments, refunds: new Refunds(store,c,payments) };
   })().catch(error => { initialized = undefined; throw error; });
   return async (req: IncomingMessage, res: ServerResponse) => {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Robots-Tag', 'noindex, nofollow');
@@ -41,20 +44,20 @@ export function createApp(c: Config, existingDb?: Database) {
       if (route === '/jobs') {
         if (method !== 'GET') return reply(405, { error: 'Method not allowed.' });
         if (!authorizedJob(header(req, 'authorization'), c.cronSecret)) return reply(401, { error: 'Unauthorized.', code: 'UNAUTHORIZED' });
-        const { store, payments } = await initialize();
-        const result = await runBookingJobs(store, payments, c);
+        const { store, payments, refunds } = await initialize();
+        const result = await runBookingJobs(store, payments, c, refunds);
         return reply(result.failures ? 503 : 200, { ok: result.failures === 0, ...result });
       }
       const missing = readiness(c);
       if (route === '/catalog' && method === 'GET' && (c.secret.length < 32 || (!c.mock && !c.databaseUrl))) {
         return reply(200, { mode: 'unconfigured', bookingOpen: false, notice: 'Online reservations are not open yet. Send an inquiry to plan your visit.', packages: [], slots: [] });
       }
-      const { store, auth, payments } = await initialize();
+      const { store, auth, payments, refunds } = await initialize();
       const ip = c.local ? req.socket.remoteAddress || 'local' : header(req,'x-vercel-forwarded-for').split(',')[0]?.trim() || 'unknown';
       const rate = async (key: string, max: number, seconds: number) => { if (!await auth.limit(key, max, seconds)) throw new StoreError('Please wait a moment before trying again.', 429, 'RATE_LIMIT'); };
       if (route === '/webhook' && method === 'POST') {
-        await payments.webhook(await rawBody(req), header(req,'stripe-signature'));
-        await deliverConfirmations(store,c); return reply(200,{ok:true});
+        await payments.webhook(await rawBody(req), header(req,'stripe-signature'), event => refunds.webhook(event));
+        await deliverConfirmations(store,c); await deliverBookingAlerts(store,c); return reply(200,{ok:true});
       }
       if (!['GET','POST'].includes(method)) return reply(405,{error:'Method not allowed.'});
       let body: Record<string, unknown> = {};
@@ -90,7 +93,7 @@ export function createApp(c: Config, existingDb?: Database) {
         if (route === '/simulate') {
           const outcome = body.outcome;
           if (!['paid','failed','expired'].includes(String(outcome)) || !b.sessionId || !b.sessionId.startsWith('mock_')) throw new StoreError('Invalid simulation.',400,'INVALID_INPUT');
-          b = await store.applyStripeEvent({eventId:`mock:${b.id}:${outcome}`,bookingId:b.id,sessionId:b.sessionId,livemode:false,amountCents:b.amountCents,currency:'usd',
+          b = await store.applyStripeEvent({eventId:`mock:${b.id}:${outcome}`,bookingId:b.id,sessionId:b.sessionId,paymentIntentId:`pi_mock_${b.id.replaceAll('-','')}`,livemode:false,amountCents:b.amountCents,currency:'usd',
             paymentStatus:outcome==='paid'?'paid':'unpaid',sessionStatus:outcome==='expired'?'expired':'complete',
             type:outcome==='paid'?'checkout.session.completed':outcome==='expired'?'checkout.session.expired':'checkout.session.async_payment_failed'});
         } else if (['held','awaiting_payment'].includes(b.status)) {
@@ -99,7 +102,8 @@ export function createApp(c: Config, existingDb?: Database) {
         }
         await deliverConfirmations(store,c);
         const latest = await store.getBooking(b.id) || b;
-        return reply(200,{...publicBooking(latest),...(c.mock ? {emailStatus:'simulated'} : {})});
+        const refund = await refunds.getForBooking(latest.id);
+        return reply(200,{...publicBooking(latest),refundStatus:refund?.status ?? null,...(c.mock ? {emailStatus:'simulated'} : {})});
       }
       if (route === '/admin/login' && method === 'POST') {
         const email = String(body.email || '').trim().toLowerCase();
@@ -125,8 +129,8 @@ export function createApp(c: Config, existingDb?: Database) {
           await auth.logout(session); res.setHeader('Set-Cookie',`${cookieName}=; Path=/api/igloo; HttpOnly; SameSite=Strict; Max-Age=0${c.local?'':'; Secure'}`); return reply(200,{ok:true});
         }
         if (route === '/admin' && method === 'GET') {
-          const bookings = (await store.listManagedBookings()).map(({id,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,taxCents,totalCents,currency,emailStatus,createdAt,cancellationRequest})=>({id,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,taxCents,totalCents,currency,emailStatus,createdAt,cancellationRequest}));
-          return reply(200,{mode:c.mode,readiness:[...missing,...c.mock?['Local simulation: no Stripe payment or email is sent.']:[]],packages:await store.listPackages(true),slots:await store.listSlots(true),bookings});
+          const bookings = (await store.listManagedBookings()).map(({id,slotId,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,taxCents,totalCents,currency,emailStatus,createdAt,cancellationRequest,refundedAt})=>({id,slotId,reference,status,name,email,phone,guests,packageName,startsAt,endsAt,amountCents,taxCents,totalCents,currency,emailStatus,createdAt,cancellationRequest,refundedAt}));
+          return reply(200,{mode:c.mode,readiness:[...missing,...c.mock?['Local simulation: no Stripe payment or email is sent.']:[]],packages:await store.listPackages(true),slots:await store.listSlots(true),bookings,refundsEnabled:c.mock || c.refundsEnabled===true,refunds:await refunds.list()});
         }
         if (route === '/admin/package' && method === 'POST') { await store.savePackage(body as unknown as PackageInput); return reply(200,{ok:true}); }
         if (route === '/admin/slot' && method === 'POST') { await store.saveSlot(body as unknown as SlotInput); return reply(200,{ok:true}); }
@@ -138,13 +142,29 @@ export function createApp(c: Config, existingDb?: Database) {
           if (typeof body.bookingId !== 'string' || typeof body.requestId !== 'string') throw new StoreError('Provide a booking and cancellation request.',400,'INVALID_INPUT');
           await store.withdrawCancellation(body.bookingId,body.requestId,staffEmail); return reply(200,{ok:true});
         }
+        if (route === '/admin/refund' && method === 'POST') {
+          await rate(`refund:${staffEmail}`,20,60);
+          if (typeof body.bookingId !== 'string' || typeof body.requestId !== 'string' || typeof body.note !== 'string' || !['weather','venue_closure'].includes(String(body.reason))) throw new StoreError('Provide a booking, request ID, closure reason and staff note.',400,'INVALID_INPUT');
+          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.bookingId)) throw new StoreError('Booking id must be a UUID.',400,'INVALID_INPUT');
+          const b = await store.getBooking(body.bookingId);
+          if (b?.status === 'confirmed' && !b.paymentIntentId && !c.mock && c.refundsEnabled) await payments.reconcile(b);
+          const refund = await refunds.request({bookingId:body.bookingId,requestId:body.requestId,reason:body.reason as 'weather'|'venue_closure',note:body.note},staffEmail);
+          return reply(200,{ok:true,refund});
+        }
+        if (route === '/admin/refund/reconcile' && method === 'POST') {
+          await rate(`refund-check:${staffEmail}`,5,60);
+          if (typeof body.bookingId !== 'string') throw new StoreError('Provide a booking.',400,'INVALID_INPUT');
+          await refunds.processBooking(body.bookingId);
+          await deliverBookingAlerts(store,c);
+          return reply(200,{ok:true,refund:await refunds.getForBooking(body.bookingId)});
+        }
         if (route === '/admin/reconcile' && method === 'POST') {
           await rate(`reconcile:${ip}`,5,60);
           for (const b of await store.pendingCheckouts(1)) {
             if (b.sessionId) await payments.reconcile(b);
             else if (b.status === 'held') await payments.checkout(b);
           }
-          await deliverConfirmations(store,c); return reply(200,{ok:true});
+          await deliverConfirmations(store,c); await deliverBookingAlerts(store,c); return reply(200,{ok:true});
         }
       }
       reply(404,{error:'Not found.'});

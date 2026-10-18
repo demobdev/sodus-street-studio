@@ -13,7 +13,7 @@ export async function deliverConfirmations(store: IglooStore, c: Config) {
   // Simulation leaves an honest pending outbox; it does not claim a real email was sent.
   if (c.mock || !c.emailEnabled) return;
   // One delivery per invocation keeps webhook and API work inside the function time budget.
-  for (const item of await store.claimConfirmationEmails(1)) {
+  for (const item of await store.claimConfirmationEmails(1, c.mode === 'live')) {
     const b = item.booking;
     try {
       const time = new Intl.DateTimeFormat('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'America/New_York' }).format(new Date(b.startsAt));

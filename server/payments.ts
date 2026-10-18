@@ -3,21 +3,29 @@ import { randomBytes } from 'node:crypto';
 import type { Config } from './config.js';
 import { IglooStore, StoreError, type Booking, type CheckoutTax, type PaymentEvidence } from './store.js';
 import { bookingToken } from './tokens.js';
+import { bookingWindowOpen } from './booking-policy.js';
 
 export class Payments {
   readonly stripe: Stripe | null;
-  private verifiedAccount?: Promise<void>;
+  private verifiedAccount?: Promise<Stripe.Account>;
   constructor(private store: IglooStore, private config: Config) {
     this.stripe = config.stripeKey && !config.mock ? new Stripe(config.stripeKey, { maxNetworkRetries: 2, timeout: 15_000 }) : null;
   }
-  async verifyAccount() {
+  async verifyAccount(options: { requireCharges?: boolean } = {}) {
     if (this.config.mock) return;
     if (!this.stripe || !this.config.stripeAccount) throw new StoreError('Stripe setup is incomplete.', 503, 'NOT_CONFIGURED');
-    this.verifiedAccount ??= this.stripe.accounts.retrieveCurrent().then(account => {
+    this.verifiedAccount ??= this.stripe.accounts.retrieveCurrent({}, options.requireCharges === false
+      ? { maxNetworkRetries: 0, timeout: 10_000 } : undefined).then(account => {
       if (account.id !== this.config.stripeAccount) throw new Error('Stripe account mismatch.');
-      if (this.config.mode === 'live' && account.charges_enabled !== true) throw new StoreError('Stripe has not enabled live payments for this account.', 503, 'NOT_CONFIGURED');
+      return account;
     }).catch(error => { this.verifiedAccount = undefined; throw error; });
-    await this.verifiedAccount;
+    const account = await this.verifiedAccount;
+    if (options.requireCharges !== false && this.config.mode === 'live' && account.charges_enabled !== true) {
+      // A refund may remain available while new charges are paused. Checkout still fails closed,
+      // and clears its cached result so enabling payments can be detected on the next attempt.
+      this.verifiedAccount = undefined;
+      throw new StoreError('Stripe has not enabled live payments for this account.', 503, 'NOT_CONFIGURED');
+    }
   }
   async checkout(booking: Booking): Promise<Booking> {
     if (booking.status !== 'held') {
@@ -27,6 +35,9 @@ export class Payments {
       throw new StoreError('This reservation is no longer awaiting checkout. Please review its status.', 409, 'CHECK_STATUS');
     }
     if (booking.checkoutUrl) return booking;
+    if (!booking.checkoutParams && !booking.checkoutAttemptedAt && !bookingWindowOpen(booking.startsAt)) {
+      throw new StoreError('New reservations close at 2 p.m. New York time on the event day.',409,'BOOKING_CLOSED');
+    }
     await this.verifyAccount();
     if (booking.livemode && (!this.config.taxApproved || !this.config.stripeTaxRateId || (booking.checkoutParams && !booking.taxRateId))) {
       throw new StoreError('The approved booking tax setup is incomplete.', 503, 'TAX_NOT_CONFIGURED');
@@ -49,6 +60,7 @@ export class Payments {
     const params = await this.store.prepareCheckout(booking.id, {
       mode: 'payment', submit_type: 'book', customer_email: booking.email,
       client_reference_id: booking.id, metadata: { booking_id: booking.id },
+      payment_intent_data: { metadata: { booking_id: booking.id } },
       integration_identifier: `sodus_igloo_${randomBytes(8).toString('hex').replace(/[0-9]/g,'a').slice(0,8)}`,
       line_items: [{ quantity: 1, ...(tax ? { tax_rates: [tax.rateId] } : {}), price_data: { currency: 'usd', unit_amount: booking.amountCents,
         product_data: { name: booking.packageName, description: `${new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeStyle:'short',timeZone:'America/New_York'}).format(new Date(booking.startsAt))} (New York time); ${booking.guests} ${booking.guests === 1 ? 'guest' : 'guests'}` } } }],
@@ -81,6 +93,7 @@ export class Payments {
     return { eventId, bookingId: session.metadata?.booking_id || '', sessionId: session.id,
       livemode: session.livemode, amountCents: session.amount_total ?? -1, currency: session.currency ?? '',
       subtotalCents: session.amount_subtotal ?? undefined, taxCents: session.total_details?.amount_tax,
+      paymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id,
       paymentStatus: session.payment_status as PaymentEvidence['paymentStatus'], sessionStatus: session.status as PaymentEvidence['sessionStatus'], type };
   }
   async reconcile(booking: Booking) {
@@ -91,13 +104,16 @@ export class Payments {
     await this.store.db.query('UPDATE igloo_bookings SET updated_at=now() WHERE id=$1',[booking.id]);
     return result;
   }
-  async webhook(raw: Buffer, signature: string) {
+  async webhook(raw: Buffer, signature: string, onRefund?: (event: Stripe.Event) => Promise<void>) {
     if (!this.stripe || !this.config.webhookSecret || this.config.mock) throw new StoreError('Webhook unavailable.', 503, 'NOT_CONFIGURED');
     let event: Stripe.Event;
     try { event = this.stripe.webhooks.constructEvent(raw, signature, this.config.webhookSecret); }
     catch { throw new StoreError('Invalid webhook signature.', 400, 'INVALID_SIGNATURE'); }
-    if (!['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.async_payment_failed','checkout.session.expired'].includes(event.type)) return;
-    await this.verifyAccount();
+    const refundEvent = ['refund.created','refund.updated','refund.failed'].includes(event.type);
+    if (!refundEvent && !['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.async_payment_failed','checkout.session.expired'].includes(event.type)) return;
+    await this.verifyAccount({ requireCharges: !refundEvent });
+    if (event.livemode !== (this.config.mode === 'live')) throw new StoreError('Stripe event payment mode mismatch.',400,'EVENT_MODE');
+    if (refundEvent) { if (onRefund) await onRefund(event); return; }
     const session = event.data.object as Stripe.Checkout.Session;
     if (!session.metadata?.booking_id) return; // Other integrations on this account are not our reservations.
     await this.store.applyStripeEvent(this.evidence(session, event.type, event.id));

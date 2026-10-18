@@ -51,7 +51,15 @@ export default function IglooConfirmation() {
     return () => { controller.abort(); if (timer) clearTimeout(timer) }
   }, [token, refresh])
 
-  const copy = booking ? statusCopy[booking.status] : null
+  const refundVerified = booking?.status === 'cancelled' && booking.refundStatus === 'succeeded'
+  const refundNeedsHelp = booking?.status === 'cancelled' && (booking.refundStatus === 'failed' || booking.refundStatus === 'needs_review')
+  const copy = refundVerified ? {
+    title: 'Your reservation has been refunded.',
+    copy: 'The studio has cancelled this event and verified a full refund, including tax. Your reservation is no longer active. The time it takes to appear in your account depends on your bank.',
+  } : refundNeedsHelp ? {
+    title: 'Your reservation is cancelled.',
+    copy: 'Your refund needs attention from the studio. Please contact us with your booking reference. This does not reinstate your reservation.',
+  } : booking ? statusCopy[booking.status] : null
   const resumeUrl = booking?.status === 'held' && booking.checkoutUrl ? safeCheckoutUrl(booking.checkoutUrl) : null
 
   return (
@@ -71,7 +79,8 @@ export default function IglooConfirmation() {
             <div><dt className="text-sm text-navy-muted">Party</dt><dd className="mt-1">One igloo · {booking.guests} {booking.guests === 1 ? 'guest' : 'guests'}</dd></div>
             <div><dt className="text-sm text-navy-muted">Subtotal</dt><dd className="mt-1">{money(booking.amountCents, booking.currency)}</dd></div>
             <div><dt className="text-sm text-navy-muted">Tax</dt><dd className="mt-1">{money(booking.taxCents ?? 0, booking.currency)}</dd></div>
-            <div><dt className="text-sm text-navy-muted">{booking.mode === 'test' ? 'Test total' : booking.status === 'confirmed' ? 'Total paid' : 'Booking total'}</dt><dd className="mt-1 font-semibold">{money(booking.totalCents ?? booking.amountCents, booking.currency)}</dd></div>
+            <div><dt className="text-sm text-navy-muted">{refundVerified ? booking.mode === 'test' ? 'Test refund total' : 'Total refunded' : booking.mode === 'test' ? 'Test total' : booking.status === 'confirmed' ? 'Total paid' : 'Booking total'}</dt><dd className="mt-1 font-semibold">{money(booking.totalCents ?? booking.amountCents, booking.currency)}</dd></div>
+            {refundVerified && booking.refundedAt ? <div><dt className="text-sm text-navy-muted">Refund verified</dt><dd className="mt-1">{eventDate(booking.refundedAt)}</dd></div> : null}
             {booking.status === 'confirmed' ? <div><dt className="text-sm text-navy-muted">Confirmation email</dt><dd className="mt-1">{booking.emailStatus === 'sent' ? 'Sent to the email you provided.' : booking.emailStatus === 'simulated' ? 'Simulated locally; no email sent.' : 'Your booking is confirmed. Email delivery is pending.'}</dd></div> : null}
           </dl>
         ) : null}
@@ -83,7 +92,7 @@ export default function IglooConfirmation() {
           {token ? <button type="button" className="btn-outline disabled:opacity-60" disabled={loading} onClick={() => setRefresh(value => value + 1)}>Refresh Status</button> : null}
           <Link to="/igloos" className="btn-outline">Back to Igloo Events</Link>
         </div>
-        <p className="mt-8 text-sm leading-relaxed text-navy-muted">Need help? <a href="mailto:maat@onthemovecs.com" className="break-words underline decoration-gold underline-offset-4">Email the studio</a>{booking ? ` and include reference ${booking.reference}.` : '.'}</p>
+        <p className="mt-8 text-sm leading-relaxed text-navy-muted">Need help? <a href="mailto:info.sodusstreetstudio@gmail.com" className="break-words underline decoration-gold underline-offset-4">Email the studio</a>{booking ? ` and include reference ${booking.reference}.` : '.'}</p>
       </div>
     </section>
   )

@@ -2,13 +2,14 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createDatabase, type Database } from './db.js';
 import { IglooStore, type PackageInput, type SlotInput } from './store.js';
+import { IGLOO_BOOKING_POLICY } from './booking-policy.js';
 
 export const legacyPackageId = '10000000-0000-4000-8000-000000000001';
 export const legacySlotIds = [1, 2, 3].map((number) => `20000000-0000-4000-8000-${String(number).padStart(12, '0')}`);
 
 const eventDates = ['2026-10-23', '2026-10-24', '2026-10-30', '2026-10-31'];
 const localHours = ['17:00', '19:00', '21:00'];
-const policyText = 'LOCAL SIMULATION ONLY: this does not create a real reservation or charge a payment. The supplied package is $225 plus applicable tax; tax is not calculated in this preview. Each reservation includes one igloo for 90 minutes, up to eight guests and one selected platter. Final cancellation terms and tax setup are pending before live booking opens.';
+const policyText = `LOCAL SIMULATION ONLY: this does not create a real reservation or charge a payment; tax is not calculated in this preview. Approved live-booking terms: ${IGLOO_BOOKING_POLICY}`;
 
 export const iglooEventPackages: PackageInput[] = [
   ['Classic Sub Tray', 'Assorted subs.'],
@@ -18,7 +19,7 @@ export const iglooEventPackages: PackageInput[] = [
 ].map(([name, platter], index) => ({
   id: `10000000-0000-4000-8000-${String(index + 101).padStart(12, '0')}`,
   name: `${name} — TEST ONLY`,
-  description: `One igloo for 90 minutes and up to eight guests, including one ${name} platter. ${platter} $225 base price plus applicable tax; this local simulation does not calculate tax.`,
+  description: `One igloo for 90 minutes and up to eight guests, including one ${name} platter. ${platter} Live price: $225 plus 8% tax ($243 total); this local simulation does not calculate tax.`,
   durationMinutes: 90,
   amountCents: 22_500,
   currency: 'usd',

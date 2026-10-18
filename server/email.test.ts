@@ -23,7 +23,7 @@ before(async () => {
 });
 after(async () => { await db.close(); });
 beforeEach(async () => {
-  await db.query('TRUNCATE igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits');
+  await db.query('TRUNCATE igloo_booking_alerts,igloo_refund_events,igloo_refund_operations,igloo_cancellation_requests,igloo_outbox,igloo_payment_events,igloo_bookings,igloo_slots,igloo_packages,igloo_admin_tokens,igloo_admin_sessions,igloo_rate_limits');
 });
 
 async function confirmedBooking({ taxed = true, live = true } = {}) {
@@ -142,3 +142,42 @@ test('disabled delivery and local simulation leave the outbox untouched and make
   assert.equal((await store.getBooking(booking.id))!.emailStatus, 'pending');
   assert.deepEqual((await db.query('SELECT status,attempts FROM igloo_outbox WHERE booking_id=$1', [booking.id])).rows[0], { status: 'pending', attempts: 0 });
 });
+
+test('an unresolved closure refund suppresses original guest confirmation and all delayed retries', async t => {
+  const booking = await confirmedBooking();
+  const operationId = randomUUID();
+  await db.query(`INSERT INTO igloo_refund_operations
+    (id,booking_id,request_id,reason,note,actor,amount_cents,currency,payment_intent_id,livemode)
+    VALUES($1,$2,$3,'weather','Studio event closed.','staff@example.test',24300,'usd','pi_email_fixture',true)`,
+  [operationId, booking.id, randomUUID()]);
+  const network = t.mock.method(globalThis, 'fetch', async () => { throw new Error('Original confirmation must not be sent after a closure refund request.'); });
+  for (const refundStatus of ['requested', 'pending', 'failed', 'needs_review']) {
+    await db.query('UPDATE igloo_refund_operations SET status=$2 WHERE id=$1', [operationId, refundStatus]);
+    for (const emailStatus of ['pending', 'failed', 'sending']) {
+      await db.query(`UPDATE igloo_outbox SET status=$2,next_attempt_at=now()-interval '1 second',
+        lease_until=CASE WHEN $2='sending' THEN now()-interval '1 second' ELSE NULL END WHERE booking_id=$1`, [booking.id, emailStatus]);
+      await deliverConfirmations(store, config);
+      assert.equal(network.mock.callCount(), 0, `${refundStatus} refund must suppress ${emailStatus} confirmation`);
+    }
+  }
+  assert.equal((await store.getBooking(booking.id))!.status, 'confirmed', 'an unresolved refund still reserves the igloo');
+  assert.equal((await db.query('SELECT attempts FROM igloo_outbox WHERE booking_id=$1', [booking.id])).rows[0]!.attempts, 0);
+});
+
+for (const live of [true, false]) {
+  test(`${live ? 'live' : 'sandbox'} confirmation cannot be delivered under the opposite payment mode`, async t => {
+    const booking = await confirmedBooking({ live });
+    const messages: SentBody[] = [];
+    t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+      messages.push(JSON.parse(String(init?.body)) as SentBody);
+      return Response.json({ id: 'mode_isolated_receipt' });
+    });
+    await deliverConfirmations(store, { ...config, mode: live ? 'test' : 'live' });
+    assert.equal(messages.length, 0);
+    assert.equal((await store.getBooking(booking.id))!.emailStatus, 'pending');
+    await deliverConfirmations(store, { ...config, mode: live ? 'live' : 'test' });
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0]!.subject.startsWith('[TEST] '), !live);
+    assert.equal((await store.getBooking(booking.id))!.emailStatus, 'sent');
+  });
+}

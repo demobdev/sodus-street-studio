@@ -6,6 +6,8 @@ import {
 } from './igloo-schema.ts'
 
 test('igloo graph connects the visible experience, page and correctly addressed business', () => {
+  assert.equal(publicSiteOrigin, 'https://sodusstreetstudio.com')
+  assert.equal(iglooPageUrl, 'https://sodusstreetstudio.com/igloos')
   const nodes = iglooStructuredData['@graph']
   const byId = new Map(nodes.map(node => [node['@id'], node]))
   const page = nodes.find(node => node['@type'] === 'WebPage')

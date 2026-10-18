@@ -1,9 +1,7 @@
 import { iglooEvent } from './igloo-event.ts'
 import { site } from './site.ts'
 
-// Keep the working production address until the custom domain serves this site.
-// Change this once, together with the domain cutover, then rebuild.
-export const publicSiteOrigin = 'https://sodus-street-studio.vercel.app'
+export const publicSiteOrigin = 'https://sodusstreetstudio.com'
 export const iglooPageUrl = `${publicSiteOrigin}/igloos`
 export const iglooPageTitle = `Igloo Evenings in Clyde, NY | ${site.name}`
 export const iglooPageDescription = `Private igloo evenings at ${site.name} in Clyde, NY. ${iglooEvent.durationMinutes} minutes, up to ${iglooEvent.maxGuests} guests and one platter. Explore the October 2026 dates and details.`

@@ -1,10 +1,10 @@
 import type { Config } from './config.js';
 import type { IglooStore } from './store.js';
-export async function sendEmail(c: Config, to: string, subject: string, text: string, key: string): Promise<string> {
+export async function sendEmail(c: Config, to: string, subject: string, text: string, key: string, options: { replyTo?: string } = {}): Promise<string> {
   if (!c.emailEnabled || !c.emailKey || !c.emailFrom) throw new Error('Email delivery is not configured.');
   const response = await fetch('https://api.resend.com/emails', { method: 'POST', signal: AbortSignal.timeout(10_000),
     headers: { Authorization: `Bearer ${c.emailKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': key },
-    body: JSON.stringify({ from: c.emailFrom, to: [to], reply_to: c.emailReplyTo, subject, text }) });
+    body: JSON.stringify({ from: c.emailFrom, to: [to], reply_to: options.replyTo ?? c.emailReplyTo, subject, text }) });
   if (!response.ok) throw new Error(`Email service returned ${response.status}.`);
   const result = await response.json() as { id?: string }; if (!result.id) throw new Error('Email service did not acknowledge delivery.');
   return result.id;

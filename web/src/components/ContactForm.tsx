@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { submitStudioRequest } from '../lib/submitRequest'
+import { createStudioRequest } from '../lib/submitRequest'
 
 type Props = {
   inquiryType?: 'studio' | 'igloo'
@@ -11,6 +11,7 @@ export function ContactForm({ inquiryType = 'studio' }: Props) {
   const [submitted, setSubmitted] = useState(false)
   const [status, setStatus] = useState<'idle' | 'sending' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
+  const submitRequest = useMemo(createStudioRequest, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -27,17 +28,15 @@ export function ContactForm({ inquiryType = 'studio' }: Props) {
     const preferredDate = String(form.get('preferredDate') || '')
     const message = String(form.get('message') || '')
 
-    const result = await submitStudioRequest(
-      isIglooInquiry
-        ? 'Sodus Street Studio — Igloo Event Inquiry'
-        : 'Sodus Street Studio Contact Inquiry',
+    const result = await submitRequest(
+      isIglooInquiry ? 'igloo' : 'contact',
       {
         name,
         email,
-        _replyto: email,
+        website: String(form.get('website') || ''),
         phone,
         projectType,
-        ...(isIglooInquiry ? { preferredDate, requestType: 'inquiry-only' } : {}),
+        ...(isIglooInquiry ? { preferredDate } : {}),
         message,
       },
     )
@@ -58,7 +57,7 @@ export function ContactForm({ inquiryType = 'studio' }: Props) {
         <p className="section-label mb-3">Message sent</p>
         <h3 className="font-display text-3xl text-navy">We will be in touch soon.</h3>
         <p className="mx-auto mt-4 max-w-md text-navy-muted">
-          Thanks for reaching out. Your message was sent to maat@onthemovecs.com.
+          Thanks for reaching out. Your message was sent to the studio team.
         </p>
         {isIglooInquiry ? (
           <p className="mx-auto mt-3 max-w-md text-sm text-navy-muted">
@@ -85,18 +84,21 @@ export function ContactForm({ inquiryType = 'studio' }: Props) {
           not reserve a space or take a payment.
         </p>
       ) : null}
+      <div className="hidden" aria-hidden="true">
+        <label>Leave this field blank<input name="website" tabIndex={-1} autoComplete="off" /></label>
+      </div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className="block text-sm">
           <span className="mb-1.5 block font-medium">Name</span>
-          <input className="input-field" name="name" autoComplete="name" required />
+          <input className="input-field" name="name" autoComplete="name" maxLength={100} required />
         </label>
         <label className="block text-sm">
           <span className="mb-1.5 block font-medium">Email</span>
-          <input className="input-field" type="email" name="email" autoComplete="email" required />
+          <input className="input-field" type="email" name="email" autoComplete="email" maxLength={254} required />
         </label>
         <label className="block text-sm">
           <span className="mb-1.5 block font-medium">Phone</span>
-          <input className="input-field" type="tel" name="phone" autoComplete="tel" />
+          <input className="input-field" type="tel" name="phone" autoComplete="tel" maxLength={40} />
         </label>
         <label className="block text-sm">
           {isIglooInquiry ? (
@@ -110,6 +112,7 @@ export function ContactForm({ inquiryType = 'studio' }: Props) {
               <input
                 className="input-field"
                 name="projectType"
+                maxLength={120}
                 placeholder="Podcast, voiceover, music..."
                 required
               />
@@ -122,6 +125,7 @@ export function ContactForm({ inquiryType = 'studio' }: Props) {
         <textarea
           className="input-field min-h-32"
           name="message"
+          maxLength={5000}
           placeholder={isIglooInquiry ? 'Tell us about your plans and any questions you have.' : undefined}
           required
         />

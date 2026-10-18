@@ -10,6 +10,7 @@ import { deliverConfirmations, sendEmail } from './email.js';
 import { authorizedJob, runBookingJobs } from './jobs.js';
 import { Refunds } from './refunds.js';
 import { deliverBookingAlerts } from './booking-alerts.js';
+import { Inquiries, parseInquiry } from './inquiries.js';
 
 const header = (req: IncomingMessage, name: string) => { const value = req.headers[name]; return Array.isArray(value) ? value[0] : value || ''; };
 const cookieName = 'sodus_igloo_admin';
@@ -31,12 +32,12 @@ export interface AppOptions {
 }
 export function createApp(c: Config, existingDb?: Database, options: AppOptions = {}) {
   const checkoutRestriction = options.checkoutRestriction ? { ...options.checkoutRestriction } : null;
-  let initialized: Promise<{ store: IglooStore; auth: AdminAuth; payments: Payments; refunds: Refunds }> | undefined;
+  let initialized: Promise<{ store: IglooStore; auth: AdminAuth; payments: Payments; refunds: Refunds; inquiries: Inquiries }> | undefined;
   const initialize = () => initialized ??= (async () => {
     const db = existingDb || await createDatabase(c.mock ? { localPath: './.data/igloo-local' } : { connectionString: c.databaseUrl });
     const store = new IglooStore(db); await store.init();
     const payments = new Payments(store,c);
-    return { store, auth: new AdminAuth(db, c.secret, c.adminEmails), payments, refunds: new Refunds(store,c,payments) };
+    return { store, auth: new AdminAuth(db, c.secret, c.adminEmails), payments, refunds: new Refunds(store,c,payments), inquiries: new Inquiries(db,c) };
   })().catch(error => { initialized = undefined; throw error; });
   return async (req: IncomingMessage, res: ServerResponse) => {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Robots-Tag', 'noindex, nofollow');
@@ -57,7 +58,7 @@ export function createApp(c: Config, existingDb?: Database, options: AppOptions 
       if (route === '/catalog' && method === 'GET' && (c.secret.length < 32 || (!c.mock && !c.databaseUrl))) {
         return reply(200, { mode: 'unconfigured', bookingOpen: false, notice: 'Online reservations are not open yet. Send an inquiry to plan your visit.', packages: [], slots: [] });
       }
-      const { store, auth, payments, refunds } = await initialize();
+      const { store, auth, payments, refunds, inquiries } = await initialize();
       const ip = c.local ? req.socket.remoteAddress || 'local' : header(req,'x-vercel-forwarded-for').split(',')[0]?.trim() || 'unknown';
       const rate = async (key: string, max: number, seconds: number) => { if (!await auth.limit(key, max, seconds)) throw new StoreError('Please wait a moment before trying again.', 429, 'RATE_LIMIT'); };
       if (route === '/webhook' && method === 'POST') {
@@ -72,6 +73,13 @@ export function createApp(c: Config, existingDb?: Database, options: AppOptions 
         try { body = JSON.parse((await rawBody(req)).toString('utf8')); }
         catch (error) { if (error instanceof StoreError) throw error; throw new StoreError('Invalid request.',400,'INVALID_JSON'); }
         if (!body || typeof body !== 'object' || Array.isArray(body)) throw new StoreError('Invalid request.',400,'INVALID_JSON');
+      }
+      if (route === '/inquiry' && method === 'POST') {
+        await rate(`inquiry-ip:${ip}`,10,3600);
+        const inquiry = parseInquiry(body);
+        await rate(`inquiry-email:${inquiry.email}`,5,3600);
+        await rate('inquiry-global',100,3600);
+        return reply(200,await inquiries.submit(inquiry));
       }
       if (route === '/catalog' && method === 'GET') {
         const bookingOpen = missing.length === 0;

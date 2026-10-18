@@ -103,3 +103,13 @@ CREATE TABLE IF NOT EXISTS igloo_rate_limits (
   hits integer NOT NULL,
   window_start timestamptz NOT NULL
 );
+CREATE TABLE IF NOT EXISTS studio_inquiry_requests (
+  request_id uuid PRIMARY KEY,
+  payload_hash text NOT NULL,
+  status text NOT NULL CHECK (status IN ('sending', 'sent', 'failed')),
+  claim_token uuid,
+  lease_until timestamptz,
+  provider_id text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);

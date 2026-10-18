@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { ContactForm } from '../components/ContactForm'
 import { IglooBookingFlow } from '../components/IglooBookingFlow'
 import { IglooPromoVideo } from '../components/IglooPromoVideo'
+import { StarryNight } from '../components/StarryNight'
 import { iglooEvent } from '../content/igloo-event'
 import { site } from '../content/site'
 import { errorMessage, iglooApi } from '../lib/igloo'
@@ -40,8 +41,9 @@ export function Igloos() {
 
   return (
     <>
-      <section className="section-pad border-b border-gold/30 bg-navy text-ivory">
-        <div className="container-site grid items-center gap-12 lg:grid-cols-[1.4fr_1fr] lg:gap-20">
+      <section className="section-pad relative isolate overflow-hidden border-b border-gold/30 bg-navy text-ivory">
+        <StarryNight />
+        <div className="container-site relative z-[1] grid items-center gap-12 lg:grid-cols-[1.4fr_1fr] lg:gap-20">
           <div>
             <p className="section-label text-gold-light">Sodus Street Studio · October 2026</p>
             <h1 className="mt-5 max-w-3xl font-display text-5xl font-semibold leading-[1.05] tracking-tight md:text-7xl">
@@ -67,7 +69,7 @@ export function Igloos() {
                 : 'Online reservations are not open yet. Send an inquiry to plan your visit.'}
             </p>
           </div>
-          <div className="border border-gold/40 bg-ivory/[0.03] p-7 md:p-9">
+          <div className="border border-gold/40 bg-navy/80 p-7 md:p-9">
             <p className="section-label text-gold-light">Your evening, together</p>
             <p className="mt-5 font-display text-6xl text-ivory">${iglooEvent.priceCents / 100}<span className="ml-2 text-2xl text-ivory/70">per igloo</span></p>
             <p className="mt-2 text-sm text-ivory/65">Plus 8% tax · $243 total</p>

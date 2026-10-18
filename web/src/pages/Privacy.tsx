@@ -27,7 +27,8 @@ export function Privacy() {
             <h2 className="font-display text-2xl text-navy">Booking and Payment</h2>
             <p className="mt-2">
               Contact, studio booking requests, and igloo inquiries are sent to
-              the studio through FormSubmit. When online igloo reservations are
+              the studio through our website server and Resend email delivery.
+              When online igloo reservations are
               available, reservation details are stored in our booking system,
               payments are handled by Stripe, and confirmation emails are sent
               through our email delivery provider. These providers process

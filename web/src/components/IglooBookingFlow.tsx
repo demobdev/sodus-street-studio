@@ -136,7 +136,7 @@ export function IglooBookingFlow({ catalog, onRefresh }: Props) {
                 <p className="text-sm text-navy-muted">Your reservation is confirmed only after payment is verified. Card details are handled by Stripe.</p>
               </form>
             ) : null}
-            {error ? <div role="alert" className="border-l-2 border-red-700 bg-red-50 p-4 text-sm text-red-800"><p>{error}</p>{reviewBlocked ? <a href="mailto:maat@onthemovecs.com" className="mt-3 inline-block font-semibold underline">Contact the studio</a> : null}</div> : null}
+            {error ? <div role="alert" className="border-l-2 border-red-700 bg-red-50 p-4 text-sm text-red-800"><p>{error}</p>{reviewBlocked ? <a href="/contact" className="mt-3 inline-block font-semibold underline">Contact the studio</a> : null}</div> : null}
           </div>
 
           <aside aria-label="Booking summary" className="border-t-2 border-gold bg-navy p-6 text-ivory sm:p-8 lg:sticky lg:top-28">

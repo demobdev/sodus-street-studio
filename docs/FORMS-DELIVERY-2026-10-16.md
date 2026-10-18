@@ -1,6 +1,6 @@
 # Sodus form delivery audit — October 16, 2026
 
-**October 17 evening update:** Activation was observed in Maát's screenshot. One post-activation live igloo inquiry retest received FormSubmit acceptance. **Inbox receipt remains unconfirmed.** The earlier activation-required response is retained in [the test record](LAUNCH-CHECK-AND-MAAT-DRAFT-2026-10-17.md). See [the current booking handoff](SODUS-BOOKING-HANDOFF-2026-10-17.md) for sender verification and notification launch requirements. Other form rows describe implementation, not independently completed delivery tests.
+**October 17 current update:** Maát confirmed receipt of the earlier Vercel-origin igloo inquiry in Gmail message `1a14c966cda2f05b` at 9:18 p.m. Eastern. A later screenshot showed an activation error on the custom-domain studio form. The inquiry transport now uses same-origin `/api/igloo/inquiry` with Sodus’s verified Resend sender. The historical table below describes the previous FormSubmit integration; see [the replacement record](SODUS-INQUIRY-TRANSPORT-2026-10-17.md) for current behavior and validation limits.
 
 This records the implementation at the start of production-readiness work. No test submission, email, or live payment was sent during this audit. Later server/email changes should update the relevant rows before launch.
 

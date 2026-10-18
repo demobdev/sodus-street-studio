@@ -26,4 +26,4 @@ The three inquiry forms now use same-origin `POST /api/igloo/inquiry` and the al
 
 ## Hero styling
 
-The igloo hero uses a lazy-loaded tsParticles basic engine for slow ivory/gold stars over navy. It has an accessible pause control, a static reduced-motion fallback and offscreen/tab pausing. The homepage and booking launch controls are unchanged. The coming-soon gate is deferred at Demo's request.
+The igloo hero uses a lazy-loaded tsParticles basic engine for ivory/gold stars over navy. Demo requested a more noticeable continuous effect: drift is four times the initial speed and twinkle is three times faster, with automatic playback and no sky button. A static reduced-motion fallback and offscreen/tab pausing remain. The homepage and booking launch controls are unchanged. The coming-soon gate is deferred at Demo's request.

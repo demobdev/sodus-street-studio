@@ -39,43 +39,8 @@
   pointer-events: none;
 }
 
-.starry-night__control {
-  position: absolute;
-  right: max(1.25rem, calc((100% - 72rem) / 2));
-  bottom: 0.75rem;
-  z-index: 2;
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid rgb(213 188 124 / 35%);
-  border-radius: 2px;
-  background: rgb(11 24 43 / 80%);
-  color: #f8f5ec;
-  font-size: 0.75rem;
-  line-height: 1.25;
-}
-
-.starry-night__control:hover {
-  border-color: #d5bc7c;
-  color: #d5bc7c;
-}
-
-.starry-night__control:focus-visible {
-  outline-color: #d5bc7c;
-}
-
-@media (max-width: 767px) {
-  .starry-night__control {
-    top: 0.75rem;
-    bottom: auto;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .starry-night__canvas,
-  .starry-night__control {
+  .starry-night__canvas {
     display: none;
   }
 

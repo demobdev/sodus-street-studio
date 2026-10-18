@@ -30,26 +30,26 @@ const stillStars = Array.from({ length: 48 }, (_, index) => ({
 }))
 
 const starOptions: ISourceOptions = {
-  autoPlay: false,
+  autoPlay: true,
   fullScreen: { enable: false },
   detectRetina: false,
   fpsLimit: 24,
-  pauseOnBlur: true,
-  pauseOnOutsideViewport: true,
+  // The component owns visibility so two pause controllers cannot disagree.
+  pauseOnBlur: false,
   particles: {
     number: { value: 60, density: { enable: false } },
     // tsParticles v4 puts color in paint; the small basic bundle supplies
     // circles, movement and opacity animation without mouse interactions.
     paint: { color: { value: ['#F8F5EC', '#F8F5EC', '#D5BC7C'] } },
     shape: { type: 'circle' },
-    size: { value: { min: 0.6, max: 1.7 } },
+    size: { value: { min: 0.8, max: 2 } },
     opacity: {
       value: { min: 0.15, max: 0.8 },
-      animation: { enable: true, speed: 0.3, sync: false, startValue: 'random' },
+      animation: { enable: true, speed: 0.9, sync: false, startValue: 'random' },
     },
     move: {
       enable: true,
-      speed: 0.045,
+      speed: 0.18,
       direction: 'none',
       outModes: { default: 'out' },
     },
@@ -63,13 +63,11 @@ export function StarryNight() {
   const containerRef = useRef<Container | undefined>(undefined)
   const [reducedMotion, setReducedMotion] = useState(() =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  const [paused, setPaused] = useState(false)
   const [inView, setInView] = useState(false)
   const [activated, setActivated] = useState(false)
   const [pageVisible, setPageVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
   const [ready, setReady] = useState(false)
-  const [unavailable, setUnavailable] = useState(false)
-  const shouldAnimate = !reducedMotion && !paused && inView && pageVisible
+  const shouldAnimate = !reducedMotion && inView && pageVisible
   const shouldAnimateRef = useRef(shouldAnimate)
 
   useEffect(() => {
@@ -118,7 +116,7 @@ export function StarryNight() {
           else container.pause()
           setReady(true)
         }
-      }).catch(() => { if (!disposed) setUnavailable(true) })
+      }).catch(() => { /* Keep the still sky if the optional engine cannot load. */ })
     })
     return () => {
       disposed = true
@@ -130,7 +128,6 @@ export function StarryNight() {
   }, [activated, reducedMotion, id])
 
   return (
-    <>
       <div ref={sceneRef} className="starry-night" aria-hidden="true" data-sky-state={reducedMotion ? 'still' : shouldAnimate && ready ? 'playing' : 'paused'}>
         <div className="starry-night__atmosphere" />
         <div className={`starry-night__still ${ready ? 'starry-night__still--dim' : ''}`}>
@@ -138,19 +135,5 @@ export function StarryNight() {
         </div>
         <div ref={canvasRef} className="starry-night__canvas" />
       </div>
-      {!reducedMotion && !unavailable ? (
-        <button
-          type="button"
-          className="starry-night__control"
-          aria-label={paused ? 'Play star animation' : 'Pause star animation'}
-          onClick={() => setPaused(value => !value)}
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-            {paused ? <path d="M3 1.5 10 6l-7 4.5z" /> : <path d="M2 1h3v10H2zm5 0h3v10H7z" />}
-          </svg>
-          {paused ? 'Play sky' : 'Pause sky'}
-        </button>
-      ) : null}
-    </>
   )
 }

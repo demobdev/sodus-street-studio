@@ -1,13 +1,30 @@
-import { useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { site } from '../content/site'
 
 export function Header() {
   const [open, setOpen] = useState(false)
+  const menuButton = useRef<HTMLButtonElement>(null)
+  const { key } = useLocation()
+
+  useEffect(() => {
+    setOpen(false)
+  }, [key])
+
+  useEffect(() => {
+    if (!open) return
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      setOpen(false)
+      menuButton.current?.focus()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [open])
 
   return (
-    <header className="sticky top-0 z-50 border-b border-navy/10 bg-ivory/95 backdrop-blur">
-      <div className="container-site flex items-center justify-between gap-3 px-4 py-2.5 sm:gap-4 sm:px-5 sm:py-3 md:px-8 lg:px-12">
+    <header className="sticky top-0 z-50 flex max-h-[100dvh] flex-col border-b border-navy/10 bg-ivory/95 backdrop-blur">
+      <div className="container-site flex shrink-0 items-center justify-between gap-3 px-4 py-2.5 sm:gap-4 sm:px-5 sm:py-3 md:px-8 lg:px-12">
         <Link
           to="/"
           className="flex min-w-0 shrink items-center"
@@ -41,10 +58,12 @@ export function Header() {
             Book a Session
           </Link>
           <button
+            ref={menuButton}
             type="button"
             className="inline-flex h-10 w-10 items-center justify-center border border-navy/20 text-navy xl:hidden"
             aria-label="Toggle menu"
             aria-expanded={open}
+            aria-controls="mobile-navigation"
             onClick={() => setOpen((value) => !value)}
           >
             <span className="sr-only">Menu</span>
@@ -58,7 +77,7 @@ export function Header() {
       </div>
 
       {open ? (
-        <div className="border-t border-navy/10 bg-ivory px-5 py-4 xl:hidden">
+        <div id="mobile-navigation" className="min-h-0 overflow-y-auto overscroll-contain border-t border-navy/10 bg-ivory px-5 py-4 xl:hidden">
           <nav className="flex flex-col gap-3">
             {site.nav.map((item) => (
               <NavLink

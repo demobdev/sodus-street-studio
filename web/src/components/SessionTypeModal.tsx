@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { SessionType } from '../content/sessions'
 
 type Props = {
@@ -8,19 +8,49 @@ type Props = {
 }
 
 export function SessionTypeModal({ session, onClose, onBook }: Props) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+
   useEffect(() => {
     if (!session) return
 
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousOverflow = document.body.style.overflow
+
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const dialog = dialogRef.current
+      if (!dialog) return
+      const controls = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      )).filter(control => control.tabIndex >= 0 && control.getClientRects().length > 0)
+
+      event.preventDefault()
+      if (!controls.length) {
+        dialog.focus({ preventScroll: true })
+        return
+      }
+      const current = controls.indexOf(document.activeElement as HTMLElement)
+      const next = current === -1
+        ? (event.shiftKey ? controls.length - 1 : 0)
+        : (current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length
+      controls[next].focus()
     }
 
     document.body.style.overflow = 'hidden'
+    closeButtonRef.current?.focus({ preventScroll: true })
     window.addEventListener('keydown', onKeyDown)
 
     return () => {
-      document.body.style.overflow = ''
+      document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', onKeyDown)
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true })
     }
   }, [session, onClose])
 
@@ -28,8 +58,10 @@ export function SessionTypeModal({ session, onClose, onBook }: Props) {
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[60] flex items-end justify-center bg-navy/60 p-4 sm:items-center"
       role="dialog"
+      tabIndex={-1}
       aria-modal="true"
       aria-labelledby="session-modal-title"
       onClick={onClose}
@@ -46,6 +78,7 @@ export function SessionTypeModal({ session, onClose, onBook }: Props) {
             </h2>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             className="mt-1 inline-flex h-9 w-9 items-center justify-center border border-navy/15 text-xl text-navy transition hover:border-gold hover:text-gold-dark"

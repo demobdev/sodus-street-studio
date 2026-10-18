@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import {
-  iglooPageHtml, iglooPageUrl, iglooStructuredData, publicSiteOrigin, serializeStructuredData,
+  iglooPageUrl, iglooStructuredData, publicSiteOrigin, serializeStructuredData,
 } from './igloo-schema.ts'
+import { metadataForPath, pageMetadataHtml } from './page-metadata.ts'
 
 test('igloo graph connects the visible experience, page and correctly addressed business', () => {
   assert.equal(publicSiteOrigin, 'https://sodusstreetstudio.com')
@@ -38,12 +39,13 @@ test('inline JSON-LD cannot close its script element and round-trips accurately'
 
 test('initial igloo HTML contains one canonical and parseable graph while retaining the app entry', () => {
   const source = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
-  const html = iglooPageHtml(source)
+  const metadata = metadataForPath('/igloos')
+  const html = pageMetadataHtml(source, metadata)
   assert.equal((html.match(/rel="canonical"/g) ?? []).length, 1)
   assert.match(html, /<title>Igloo Evenings in Clyde, NY/)
   assert.ok(html.includes(`href="${iglooPageUrl}"`))
-  const json = html.match(/<script id="igloo-structured-data" type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1]
-  assert.deepEqual(JSON.parse(json), iglooStructuredData)
+  const json = html.match(/<script id="site-structured-data" type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1]
+  assert.deepEqual(JSON.parse(json), metadata.structuredData)
   assert.match(html, /<div id="root"><\/div>/)
   assert.match(html, /src="\/src\/main.tsx"/)
 })

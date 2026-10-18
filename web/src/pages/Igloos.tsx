@@ -3,7 +3,6 @@ import { Link, useLocation } from 'react-router-dom'
 import { ContactForm } from '../components/ContactForm'
 import { IglooBookingFlow } from '../components/IglooBookingFlow'
 import { IglooPromoVideo } from '../components/IglooPromoVideo'
-import { IglooPageMetadata } from '../components/IglooPageMetadata'
 import { iglooEvent } from '../content/igloo-event'
 import { site } from '../content/site'
 import { errorMessage, iglooApi } from '../lib/igloo'
@@ -41,7 +40,6 @@ export function Igloos() {
 
   return (
     <>
-      <IglooPageMetadata />
       <section className="section-pad border-b border-gold/30 bg-navy text-ivory">
         <div className="container-site grid items-center gap-12 lg:grid-cols-[1.4fr_1fr] lg:gap-20">
           <div>

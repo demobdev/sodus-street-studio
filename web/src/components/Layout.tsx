@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { Footer } from './Footer'
 import { Header } from './Header'
 import { MobileBookBar } from './MobileBookBar'
+import { PageMetadata } from './PageMetadata'
 
 export function Layout() {
   const { pathname, hash, key } = useLocation()
@@ -53,6 +54,7 @@ export function Layout() {
 
   return (
     <div className="min-h-screen pb-20 sm:pb-0">
+      <PageMetadata />
       <Header />
       <main className="[&_[id]]:scroll-mt-28">
         <Outlet />

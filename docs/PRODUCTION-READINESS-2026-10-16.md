@@ -1,6 +1,6 @@
 # Sodus igloo production readiness — October 16, 2026
 
-**October 17 evening update:** The current checklist is [the booking handoff](SODUS-BOOKING-HANDOFF-2026-10-17.md). Maát answered tax, policy, cutoff and reply-to questions. Form activation was observed and one retest was accepted by FormSubmit; inbox receipt is still unconfirmed. Venue-closure refunds and notifications are implemented and tested with mocks, but final deployment, sender DNS verification and live Stripe refund permissions/event subscriptions remain pending. The remainder of this document preserves the October 16 audit; its unanswered-policy, missing-photo and no-test-inquiry statements are historical.
+**October 17 evening update:** The current checklist is [the booking handoff](SODUS-BOOKING-HANDOFF-2026-10-17.md). Maát answered tax, policy, cutoff and reply-to questions. Form activation was observed and one retest was accepted by FormSubmit; inbox receipt is still unconfirmed. Venue-closure refunds and notifications are deployed and tested with mocks. The approved tax rate and policies are configured; sender DNS verification and live Stripe refund permissions/event subscriptions remain pending. The remainder of this document preserves the October 16 audit; its unanswered-policy, missing-photo and no-test-inquiry statements are historical.
 
 Customer reservations remain closed. The production payment connection is being prepared; deployment alone is not a launch approval or proof of a completed payment.
 

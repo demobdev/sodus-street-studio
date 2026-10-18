@@ -2,7 +2,7 @@
 
 ## Current status
 
-Customer bookings and live refunds remain disabled. The approved-policy, venue-closure refund and notification changes are implemented; their final production deployment is pending. Publishing these changes does not open bookings. Append the final deployment and production verification below when complete.
+Customer bookings and live refunds remain disabled. The approved-policy, venue-closure refund and notification changes are deployed to the stable Vercel site. Publishing these changes does not open bookings. DNS and Stripe permission changes are prepared and awaiting Demo's action-time confirmation.
 
 ## Decisions received
 
@@ -38,13 +38,13 @@ Studio, general-contact and igloo-inquiry forms still send to `maat@onthemovecs.
 
 | Item | Status / next action |
 | --- | --- |
-| Event price, tax percentage, cutoff and policy | Answered by Maát. Finish applying/validating the exact approved production tax rate and package-policy snapshots; do not ask her to supply these answers again. |
+| Event price, tax percentage, cutoff and policy | Applied. Stripe rate `txr_1URhxfGVrEBb1o4UxBNVackH` is active, 8%, exclusive, New York; the production tax-rate variable and approval flags are set. The four draft package policies contain the approved wording. Do not ask Maát for these answers again. |
 | Form inbox confirmation | Ask Maát whether the one post-activation test reached inbox or spam. Provider acceptance is verified; receipt is not. |
-| Sodus sending domain | Resend domain was created, but is **not verified**. Publish the exact required DNS records, verify the domain, configure the sending credential/address, and test staff sign-in plus guest/staff mail. DNS access may require Maát/Morgan/Christian if our current access is insufficient. |
+| Sodus sending domain | Resend domain `3e4c7be9-db68-4d1b-8fc6-c0f892579b17` was created, but is **not verified**. Demo approved the GoDaddy sign-in and Maát's delegated account includes Sodus. Four required records are prepared, unsaved, awaiting confirmation. Then verify the domain, configure a domain-restricted sending credential, and test staff sign-in plus guest/staff mail. Sender and Gmail reply-to are already set in Vercel; delivery remains disabled. |
 | Live Stripe permissions | Existing restricted key has Accounts read, Checkout Sessions write and Tax Rates read. **Charges and Refunds access is not granted.** Enable only the additional required refund capability through an approved configuration change; keep live refund execution disabled until verified. |
 | Stripe webhook | Existing live endpoint subscribes to the four Checkout Session events only. Add the three refund events and validate real Stripe-origin delivery and signature/account checks. |
 | Payment/refund validation | Complete a separate Stripe sandbox checkout/refund/notification flow and then an owner-controlled live smoke check when ready. No live charge/refund or actual refund email was performed by the automated tests below. |
-| Release | Final production deployment and deployed readiness checks pending. Keep `IGLOO_ALLOW_LIVE=false` and `IGLOO_REFUNDS_ENABLED=false`; catalog packages/slots must not be opened until all required checks pass. |
+| Release | Deployed and checked; keep `IGLOO_ALLOW_LIVE=false` and `IGLOO_REFUNDS_ENABLED=false`. Catalog packages/slots must not be opened until all required checks pass. |
 | Photos | Replace/add Tuesday's supplied venue photos after review. This is a content follow-up, not a Stripe account blocker. |
 
 The bank account was already connected. No renewed bank-account setup request is needed. Rescheduling is intentionally unavailable under the approved policy, rather than an unfinished customer feature.
@@ -58,4 +58,10 @@ The bank account was already connected. No renewed bank-account setup request is
 
 ## Release record
 
-Pending final production deployment and verification by the main task.
+- Commit `78de023d263a9aee75170d165478c5efb35d8d7a` pushed to `main`; Vercel deployment `dpl_J99rFPdCAF3FBZYC6JqsfPbcpmDY` is READY and aliased to https://sodus-street-studio.vercel.app.
+- Full server suite: 101 passed, zero failed, two opt-in PostgreSQL tests skipped in that run; those two tests passed separately on the development host. TypeScript, web build and lint passed.
+- Actual local browser flow passed: TEST booking `IG-AF6A08CD3513`, simulated payment, closed seating, queued weather refund, successful processing, guest cancellation/refund screen. Capacity returned from 3/4 to 4/4 and the seating remained closed. Local simulation used $225 with zero test tax; separate payment/refund tests verified the full $243 including tax. No real payment, refund or email occurred.
+- Deployed public page visibly shows $243 total, 2pm Eastern cutoff, no customer rescheduling, and full closure refund policy. Production catalog returns `mode:live`, `bookingOpen:false`, empty packages/slots; unauthenticated admin returns 401.
+- Production database verification: four draft packages, twelve closed slots, zero bookings, zero refund operations and zero alerts.
+- Proof images: `C:/Users/Demo Bailey/.codex/visualizations/2026/10/17/sodus-refunds/` contains `local-refund-success.png`, `local-guest-refund.png`, `live-booking-policy.png`, `stripe-tax-rate.png`, the prepared Stripe permission/event screenshots, DNS preparation and form acceptance proof.
+- GoDaddy currently points the root at its WebsiteBuilder site and `www` at the root. Website DNS has not been switched to Vercel. Treat custom-domain cutover separately from sender DNS and verify the public origin, forms and certificates when performed.

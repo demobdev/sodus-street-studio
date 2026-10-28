@@ -60,7 +60,8 @@ const serviceEntities = services.map(service => ({
 // This registry is shared by the initial HTML build and React navigation so
 // crawlers and visitors receive the same page identity on every entry path.
 export const publicPages: PageMetadata[] = [
-  publicPage('/', studioPageTitle, studioPageDescription, 'WebPage', {
+  publicPage('/', `Igloo Dining under the Stars | ${site.name}`,
+    `Enjoy illuminated igloos and outdoor dining at ${site.name} in Clyde, NY through November. See event details and reserve on Eventbrite.`, 'WebPage', {
     mainEntity: { '@id': businessId },
   }),
   {

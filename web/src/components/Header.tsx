@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { site } from '../content/site'
+import { iglooReservationUrl } from '../content/igloo-content'
 
 export function Header() {
   const [open, setOpen] = useState(false)
   const menuButton = useRef<HTMLButtonElement>(null)
-  const { key } = useLocation()
+  const { key, pathname } = useLocation()
+  const iglooLanding = pathname === '/' || pathname.startsWith('/igloos')
 
   useEffect(() => {
     setOpen(false)
@@ -54,9 +56,15 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <Link to="/booking" className="btn-primary hidden sm:inline-flex">
-            Book a Session
-          </Link>
+          {iglooLanding ? (
+            <a href={iglooReservationUrl} target="_blank" rel="noopener noreferrer" className="btn-primary hidden sm:inline-flex">
+              Reserve Now <span className="sr-only">(opens Eventbrite in a new tab)</span>
+            </a>
+          ) : (
+            <Link to="/booking" className="btn-primary hidden sm:inline-flex">
+              Book a Session
+            </Link>
+          )}
           <button
             ref={menuButton}
             type="button"
@@ -89,13 +97,25 @@ export function Header() {
                 {item.label}
               </NavLink>
             ))}
-            <Link
-              to="/booking"
-              className="btn-primary mt-2"
-              onClick={() => setOpen(false)}
-            >
-              Book a Session
-            </Link>
+            {iglooLanding ? (
+              <a
+                href={iglooReservationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary mt-2"
+                onClick={() => setOpen(false)}
+              >
+                Reserve Now <span className="sr-only">(opens Eventbrite in a new tab)</span>
+              </a>
+            ) : (
+              <Link
+                to="/booking"
+                className="btn-primary mt-2"
+                onClick={() => setOpen(false)}
+              >
+                Book a Session
+              </Link>
+            )}
           </nav>
         </div>
       ) : null}

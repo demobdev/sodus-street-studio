@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import { Accordion } from '../components/Accordion'
+import { IglooGallery } from '../components/IglooGallery'
 import { faqPreview } from '../content/faq'
-import { iglooEvent } from '../content/igloo-event'
+import { iglooReservationUrl } from '../content/igloo-content'
 import { services } from '../content/services'
 import { site } from '../content/site'
 
@@ -32,11 +33,11 @@ export function Home() {
   return (
     <>
       {/* Hero */}
-      <section className="relative min-h-[88vh] overflow-hidden bg-navy text-ivory">
+      <section className="relative min-h-[78vh] overflow-hidden bg-navy text-ivory">
         <img
-          src="/images/hero-studio.png"
-          alt=""
-          aria-hidden
+          src="/images/igloo-hero.jpg"
+          alt="Four illuminated igloos beneath string lights on an autumn evening."
+          fetchPriority="high"
           className="absolute inset-0 h-full w-full scale-105 object-cover object-[70%_45%] animate-fade-in"
         />
         <div
@@ -47,43 +48,60 @@ export function Home() {
           className="absolute inset-0 bg-gradient-to-t from-navy/80 via-transparent to-navy/40"
           aria-hidden
         />
-        <div className="relative container-site flex min-h-[88vh] flex-col justify-center px-5 py-24 md:px-8 lg:px-12">
+        <div className="relative container-site flex min-h-[78vh] flex-col justify-center px-5 py-24 md:px-8 lg:px-12">
           <p className="animate-fade-up section-label text-gold-light">
-            {site.location}
+            Outdoor dining · {site.location}
           </p>
           <h1 className="animate-fade-up-delay mt-4 max-w-4xl font-display text-5xl font-semibold leading-[1.05] tracking-tight text-ivory md:text-7xl">
-            {site.tagline}
+            Gather under the stars.
           </h1>
           <p className="animate-fade-up-delay-2 mt-6 max-w-2xl text-lg leading-relaxed text-ivory/85 md:text-xl">
-            {site.subheadline}
+            Settle into an illuminated igloo for outdoor dining at Sodus Street Studio. Igloos and outdoor dining continue through November.
           </p>
           <div className="animate-fade-up-delay-2 mt-10 flex flex-wrap gap-4">
-            <Link to="/booking" className="btn-primary">
-              Book a Session
-            </Link>
-            <Link to="/services" className="btn-secondary">
-              Explore Services
-            </Link>
+            <a href={iglooReservationUrl} target="_blank" rel="noopener noreferrer" className="btn-primary">
+              Reserve Now <span className="sr-only">(opens Eventbrite in a new tab)</span>
+            </a>
+            <a href="#igloo-season" className="btn-secondary">
+              Explore the igloos
+            </a>
           </div>
         </div>
       </section>
 
-      {/* Seasonal events */}
-      <section className="border-b border-gold/30 bg-ivory-warm px-5 py-10 md:px-8 lg:px-12">
+      {/* Current igloo season */}
+      <section id="igloo-season" className="border-b border-gold/30 bg-ivory-warm px-5 py-10 md:px-8 lg:px-12">
         <div className="container-site flex flex-col items-start justify-between gap-6 md:flex-row md:items-center md:gap-10">
           <div className="max-w-2xl">
-            <p className="section-label">October 23, 24, 30 & 31 · Clyde, NY</p>
+            <p className="section-label">Through November · Clyde, NY</p>
             <h2 className="mt-2 font-display text-3xl font-semibold text-navy md:text-4xl">
-              Sodus Street Studio Under the Stars.
+              Igloos, outdoor dining, and Sport Saturdays.
             </h2>
             <p className="mt-3 leading-relaxed text-navy-muted">
-              Your own igloo for up to {iglooEvent.maxGuests} guests, {iglooEvent.durationMinutes} minutes together,
-              and a platter to share. ${iglooEvent.priceCents / 100} per igloo, plus applicable tax.
+              Make an evening of it under the lights. Event details and reservations are on Eventbrite.
             </p>
-            <Link to="/igloos#igloo-video" className="mt-4 inline-block text-sm font-semibold text-navy underline decoration-gold underline-offset-4 hover:text-gold-dark">Watch the Ride to Clyde video →</Link>
           </div>
-          <Link to="/igloos" className="btn-outline shrink-0">
-            Explore Igloo Events
+          <a href={iglooReservationUrl} target="_blank" rel="noopener noreferrer" className="btn-outline shrink-0">
+            Reserve Now <span className="sr-only">(opens Eventbrite in a new tab)</span>
+          </a>
+        </div>
+      </section>
+
+      <IglooGallery />
+
+      <section className="border-b border-navy/10 bg-navy px-5 py-12 text-ivory md:px-8 lg:px-12" aria-labelledby="studio-coming-soon-title">
+        <div className="container-site flex flex-col items-start justify-between gap-6 md:flex-row md:items-center md:gap-10">
+          <div className="max-w-2xl">
+            <p className="section-label text-gold-light">Studio updates</p>
+            <h2 id="studio-coming-soon-title" className="mt-2 font-display text-3xl font-semibold md:text-4xl">
+              Studio offerings are coming soon.
+            </h2>
+            <p className="mt-3 leading-relaxed text-ivory/75">
+              Studio information is below while we prepare the next chapter at Sodus Street Studio.
+            </p>
+          </div>
+          <Link to="/studio-space" className="btn-secondary shrink-0">
+            Explore the studio
           </Link>
         </div>
       </section>
@@ -259,7 +277,7 @@ export function Home() {
             ))}
           </div>
           <div>
-            <p className="section-label">Studio Space</p>
+            <p className="section-label">Studio preview · Coming soon</p>
             <h2 className="display-title mt-3">
               A Creative Space Built for Focus, Comfort, and Quality
             </h2>
@@ -375,7 +393,7 @@ export function Home() {
             <div className="absolute inset-0 bg-gradient-to-t from-navy/90 via-navy/40 to-transparent" />
             <div className="relative flex h-full min-h-[280px] flex-col items-start justify-end p-8 text-ivory">
               <p className="text-xs uppercase tracking-[0.2em] text-gold-light">
-                Map embed coming soon
+                Studio map · Coming soon
               </p>
               <p className="mt-2 font-display text-3xl">28 Sodus Street</p>
               <p className="text-ivory/80">Clyde, NY 14433</p>

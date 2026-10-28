@@ -31,7 +31,10 @@ export function Contact() {
               {site.address.line2}
             </p>
             <p className="mt-4 text-sm text-navy-muted">
-              Phone, email, and business hours will be listed here once confirmed.
+              Email the studio at{' '}
+              <a href="mailto:info.sodusstreetstudio@gmail.com" className="font-medium text-navy underline decoration-gold underline-offset-4">
+                info.sodusstreetstudio@gmail.com
+              </a>.
             </p>
             <div className="relative mt-8 min-h-[240px] overflow-hidden border border-navy/10 bg-navy">
               <img
